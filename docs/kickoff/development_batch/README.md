@@ -1,5 +1,7 @@
-# Development batch provenance
+# 开发材料说明
 
-This directory contains synthetic development fixtures for rule-engine integration and must not be represented as real applicant submissions. The documents intentionally mirror realistic university proposal structures so extraction, grounding, consistency checks, and review-state handling can be developed against representative inputs.
+本目录包含模拟申报指南和3套模拟材料，用于开发规则核对、字段提取、原文定位和结果处理。
 
-Replace these fixtures with authorized real materials before any real-data freeze or external evaluation claim.
+材料目前是 Markdown，每套材料中的 A1/A2/A3 等标识代表逻辑文件。PDF 上传与页面定位联调时，按当前功能准备对应 PDF。
+
+按需选用已有输入和场景即可。比赛展示标明模拟样例；真实材料接入后另记来源。
