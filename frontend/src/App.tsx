@@ -163,22 +163,36 @@ export default function App() {
     [materials, selectedId],
   )
 
+  // Only READY materials may trigger page text / image requests.
+  const previewMaterial = useMemo(
+    () => (selectedMaterial?.status === 'READY' ? selectedMaterial : null),
+    [selectedMaterial],
+  )
+
   useEffect(() => {
-    if (!selectedMaterial || selectedMaterial.status !== 'READY') {
+    if (!selectedMaterial) {
+      setPageText(null)
+      setPreviewError(null)
+      setPreviewLoading(false)
+      return
+    }
+
+    if (!previewMaterial) {
       setPageText(null)
       setPreviewError(
-        selectedMaterial?.status === 'FAILED'
+        selectedMaterial.status === 'FAILED'
           ? selectedMaterial.error_summary || '材料解析失败'
-          : null,
+          : '材料仍在处理中，请稍后刷新。',
       )
       setPreviewLoading(false)
       return
     }
 
-    const total = selectedMaterial.page_count ?? 0
+    const total = previewMaterial.page_count ?? 0
     if (total < 1) {
       setPageText(null)
       setPreviewError('材料没有可预览的页面')
+      setPreviewLoading(false)
       return
     }
 
@@ -191,7 +205,7 @@ export default function App() {
     let cancelled = false
     setPreviewLoading(true)
     setPreviewError(null)
-    void getPageText(selectedMaterial.id, safePage)
+    void getPageText(previewMaterial.id, safePage)
       .then((result) => {
         if (!cancelled) {
           setPageText(result.text)
@@ -212,7 +226,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [selectedMaterial, pageNumber])
+  }, [selectedMaterial, previewMaterial, pageNumber])
 
   const canSubmit = useMemo(() => name.trim().length > 0 && !creating, [name, creating])
   const canUpload = useMemo(
@@ -261,11 +275,12 @@ export default function App() {
     for (const file of files) {
       try {
         const material = await uploadMaterial(detail.id, file, uploadCategory)
-        successes.push(`${material.original_filename}（${STATUS_LABEL[material.status]}）`)
         if (material.status === 'FAILED') {
           failures.push(
             `${material.original_filename}：${material.error_summary || '解析失败'}`,
           )
+        } else {
+          successes.push(`${material.original_filename}（${STATUS_LABEL[material.status]}）`)
         }
       } catch (error) {
         failures.push(`${file.name}：${error instanceof Error ? error.message : '上传失败'}`)
@@ -274,9 +289,9 @@ export default function App() {
 
     const refreshed = await loadMaterials(detail.id)
     if (successes.length > 0) {
-      setUploadNotice(`已处理 ${successes.length} 个文件：${successes.join('；')}`)
+      setUploadNotice(`已上传 ${successes.length} 个文件：${successes.join('；')}`)
       const ready = refreshed.find((item) => item.status === 'READY')
-      if (ready && (!selectedId || !refreshed.some((item) => item.id === selectedId))) {
+      if (ready && (!selectedId || !refreshed.some((item) => item.id === selectedId && item.status === 'READY'))) {
         setSelectedId(ready.id)
         setPageNumber(1)
       }
@@ -289,16 +304,12 @@ export default function App() {
   }
 
   function openMaterial(material: Material) {
-    if (material.status !== 'READY') {
-      setSelectedId(material.id)
-      setPageNumber(1)
-      return
-    }
     setSelectedId(material.id)
     setPageNumber(1)
+    // Non-READY materials only show status/error; preview effect will not fetch pages.
   }
 
-  const totalPages = selectedMaterial?.page_count ?? 0
+  const totalPages = previewMaterial?.page_count ?? 0
 
   return (
     <div className="app-shell">
@@ -521,7 +532,7 @@ export default function App() {
                   <h3 className="section-title">页面预览</h3>
                   {!selectedMaterial ? (
                     <p className="muted">点击就绪材料后，可在此翻页查看页图与原生文本。</p>
-                  ) : selectedMaterial.status !== 'READY' ? (
+                  ) : !previewMaterial ? (
                     <p className="msg error" role="alert">
                       {selectedMaterial.status === 'FAILED'
                         ? `无法预览：${selectedMaterial.error_summary || '解析失败'}`
@@ -555,9 +566,9 @@ export default function App() {
 
                       <div className="preview-image-wrap">
                         <img
-                          key={`${selectedMaterial.id}-${pageNumber}`}
-                          src={pageImageUrl(selectedMaterial.id, pageNumber)}
-                          alt={`${selectedMaterial.original_filename} 第 ${pageNumber} 页`}
+                          key={`${previewMaterial.id}-${pageNumber}`}
+                          src={pageImageUrl(previewMaterial.id, pageNumber)}
+                          alt={`${previewMaterial.original_filename} 第 ${pageNumber} 页`}
                           className="preview-image"
                         />
                       </div>

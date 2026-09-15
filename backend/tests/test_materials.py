@@ -223,3 +223,55 @@ def test_persistence_across_clients(client):
         assert image.status_code == 200
         assert image.content[:8] == b"\x89PNG\r\n\x1a\n"
     app.dependency_overrides.clear()
+
+
+def test_safe_original_filename_strips_path_traversal():
+    from app.api.materials import _safe_original_filename
+
+    assert _safe_original_filename("../../../etc/passwd.pdf") == "passwd.pdf"
+    assert _safe_original_filename("..\\..\\evil.pdf") == "evil.pdf"
+    assert "/" not in _safe_original_filename("a/b/c.pdf")
+    assert "\\" not in _safe_original_filename("a\\b\\c.pdf")
+    assert ".." not in _safe_original_filename("....pdf")
+    sanitized = _safe_original_filename("../..//weird..name.pdf")
+    assert "/" not in sanitized
+    assert "\\" not in sanitized
+    assert ".." not in sanitized
+    assert sanitized.endswith(".pdf")
+
+
+def test_upload_rejects_filename_traversal_in_stored_name(client):
+    project_id = _create_project(client, "文件名清洗")
+    with A1.open("rb") as handle:
+        response = client.post(
+            f"/api/projects/{project_id}/materials",
+            data={"category": "APPLICATION"},
+            files={"file": ("../../../etc/passwd.pdf", handle, "application/pdf")},
+        )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["original_filename"] == "passwd.pdf"
+    assert "/" not in body["original_filename"]
+    assert ".." not in body["original_filename"]
+
+
+def test_upload_rejects_oversized_file(client, tmp_path, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("UPLOAD_MAX_BYTES", "1024")
+    get_settings.cache_clear()
+    try:
+        project_id = _create_project(client, "超大文件")
+        # Build a PDF-looking payload larger than 1KB.
+        oversized = tmp_path / "big.pdf"
+        oversized.write_bytes(b"%PDF-1.4\n" + b"x" * 2048)
+        with oversized.open("rb") as handle:
+            response = client.post(
+                f"/api/projects/{project_id}/materials",
+                data={"category": "OTHER"},
+                files={"file": ("big.pdf", handle, "application/pdf")},
+            )
+        assert response.status_code == 413
+        assert "过大" in response.json()["detail"]
+    finally:
+        get_settings.cache_clear()

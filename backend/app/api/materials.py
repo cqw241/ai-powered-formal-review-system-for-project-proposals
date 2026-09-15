@@ -52,9 +52,16 @@ def _parse_category(raw: str) -> MaterialCategory:
 
 
 def _safe_original_filename(filename: str | None) -> str:
-    name = (filename or "upload.pdf").strip() or "upload.pdf"
-    # Strip any directory components from client-supplied names.
-    name = Path(name).name
+    """Keep a display name only; never trust path segments from the client."""
+    raw = (filename or "upload.pdf").strip() or "upload.pdf"
+    # Normalize separators then take the final segment.
+    name = raw.replace("\\", "/").split("/")[-1].strip() or "upload.pdf"
+    # Drop leftover traversal tokens from the basename.
+    while name.startswith(".."):
+        name = name[2:].lstrip(".")
+    name = name.replace("..", "_")
+    if not name or name in {".", ".."}:
+        name = "upload.pdf"
     if not name.lower().endswith(".pdf"):
         name = f"{name}.pdf"
     if len(name) > 255:
@@ -97,7 +104,7 @@ async def upload_material(
         total += len(chunk)
         if total > max_bytes:
             raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"文件过大：上限 {max_bytes // (1024 * 1024)}MB",
             )
         chunks.append(chunk)
