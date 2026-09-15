@@ -108,6 +108,11 @@ def main(argv: list[str] | None = None) -> int:
 
     result = outcome.result
     evidence = _looks_like_fixture_read(result.summary, result.visible_texts, result.primary_color)
+    if outcome.request_id:
+        print(f"request_id={outcome.request_id}")
+    else:
+        print("request_id=<unavailable>")
+
     payload = {
         "model": settings.llm_model,
         "elapsed_ms": elapsed_ms,
@@ -126,8 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    rid = f" request_id={outcome.request_id}" if outcome.request_id else " request_id=<none>"
-    print(f"OK: vision smoke passed in {elapsed_ms}ms; evidence={strong};{rid}")
+    print(f"OK: vision smoke passed in {elapsed_ms}ms; evidence={strong}")
     return 0
 
 

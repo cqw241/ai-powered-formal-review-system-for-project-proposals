@@ -8,7 +8,7 @@ type View =
   | { kind: 'detail'; projectId: string }
 
 function formatDateTime(value: string): string {
-  // Backend serializes created_at as UTC ISO-8601 with a trailing Z.
+  // Backend sends UTC ISO-8601 with Z; parse as UTC and display in UTC.
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
     return value
@@ -16,6 +16,7 @@ function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat('zh-CN', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone: 'UTC',
     timeZoneName: 'short',
   }).format(date)
 }

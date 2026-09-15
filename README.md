@@ -34,39 +34,17 @@ docs/competition-review/B01_实现与验收记录.md
 
 ### 1. 后端（uv）
 
-默认（项目目录支持 symlink 时）：
-
 ```bash
 cd backend
 uv sync --extra dev
 ```
 
-若当前文件系统**不支持创建符号链接**（例如部分网络盘 / 虚拟挂载），可用下列绕过方式：把虚拟环境放到支持 symlink 的本地路径，并使用 copy 安装：
-
-```bash
-cd backend
-export UV_PROJECT_ENVIRONMENT="$HOME/.venvs/guizheng-ai-backend"
-export UV_LINK_MODE=copy
-uv sync --extra dev --python 3.12
-```
-
 ### 2. 前端
-
-默认：
 
 ```bash
 cd frontend
 npm install
 ```
-
-若当前文件系统不支持 symlink，改用：
-
-```bash
-cd frontend
-npm install --no-bin-links
-```
-
-本仓库的 `npm` scripts 已通过 `node ./node_modules/...` 调用工具，不依赖 `.bin` 符号链接。上述 `UV_PROJECT_ENVIRONMENT` / `--no-bin-links` 仅是无 symlink 环境的绕过，不是产品要求。
 
 ### 3. 配置
 
@@ -94,7 +72,6 @@ API Key 只放在服务端 `.env`。不要提交真实密钥。
 ```bash
 # 终端 1 — 后端
 cd backend
-# 若使用了无 symlink 绕过，先 export UV_PROJECT_ENVIRONMENT=...
 uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -171,3 +148,12 @@ B02 再做 PDF 上传与页图；B03 再做申请经费提取与问题卡。
 ## 验收记录
 
 见 [docs/competition-review/B01_实现与验收记录.md](docs/competition-review/B01_实现与验收记录.md)。
+
+## 可选：安装环境排障
+
+仅当本机文件系统无法创建符号链接、导致 `uv sync` / `npm install` 失败时才需要。**不是产品要求，也不是默认安装步骤。**
+
+- 后端：将虚拟环境放到支持 symlink 的目录，例如  
+  `UV_PROJECT_ENVIRONMENT="$HOME/.venvs/guizheng-ai-backend" UV_LINK_MODE=copy uv sync --extra dev`
+- 前端：`npm install --no-bin-links`；必要时用  
+  `node node_modules/vite/bin/vite.js` 代替 `npm run dev`

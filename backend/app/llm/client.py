@@ -86,7 +86,7 @@ def analyze_image(
     request_id: str | None = None
     try:
         response = openai_client.chat.completions.create(**request_body)
-        request_id = getattr(response, "id", None)
+        request_id = _extract_success_request_id(response)
         content = _extract_content(response)
     except APITimeoutError as exc:
         raise LlmRequestError(
@@ -225,13 +225,27 @@ def _status_error_code(exc: APIStatusError) -> str:
     return "llm_request_rejected"
 
 
+def _extract_success_request_id(response: Any) -> str | None:
+    """Best-effort request identifier from a successful chat completion."""
+    for attr in ("_request_id", "request_id"):
+        value = getattr(response, attr, None)
+        if value:
+            return str(value)
+    response_id = getattr(response, "id", None)
+    if response_id:
+        return str(response_id)
+    return None
+
+
 def _extract_request_id(exc: Exception) -> str | None:
     response = getattr(exc, "response", None)
     if response is not None:
         headers = getattr(response, "headers", None) or {}
         for key in ("x-request-id", "request-id", "x-dashscope-request-id"):
-            value = headers.get(key)
+            value = headers.get(key) if hasattr(headers, "get") else None
             if value:
                 return str(value)
     request_id = getattr(exc, "request_id", None)
-    return str(request_id) if request_id else None
+    if request_id:
+        return str(request_id)
+    return None

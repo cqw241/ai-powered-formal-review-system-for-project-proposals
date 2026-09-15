@@ -58,9 +58,15 @@ class _FakeClient:
         self.chat = _FakeChat(handler)
 
 
-def _ok_response(payload: dict[str, Any], response_id: str = "req_test_1") -> SimpleNamespace:
+def _ok_response(
+    payload: dict[str, Any],
+    response_id: str = "chatcmpl_test_1",
+    *,
+    request_id: str | None = "req_test_1",
+) -> SimpleNamespace:
     return SimpleNamespace(
         id=response_id,
+        _request_id=request_id,
         choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))],
     )
 
