@@ -6,6 +6,10 @@ from pathlib import Path
 
 import pymupdf
 
+# Cap rendered bitmap size to avoid huge memory spikes on oversized pages.
+MAX_RENDER_PIXELS = 16_777_216  # 4096 * 4096
+MIN_RENDER_ZOOM = 0.25
+
 
 class PdfError(Exception):
     """Raised when a PDF cannot be opened or a page cannot be read."""
@@ -50,16 +54,36 @@ def get_page_text(path: Path, page_number: int) -> str:
 
 
 def get_page_png(path: Path, page_number: int, *, zoom: float = 1.5) -> bytes:
-    """Render a 1-based page to PNG bytes."""
+    """Render a 1-based page to PNG bytes, clamping zoom for oversized pages."""
     doc = open_document(path)
     try:
         _ensure_page_in_range(doc, page_number)
         page = doc.load_page(page_number - 1)
-        matrix = pymupdf.Matrix(zoom, zoom)
+        effective_zoom = clamp_render_zoom(page.rect.width, page.rect.height, zoom)
+        matrix = pymupdf.Matrix(effective_zoom, effective_zoom)
         pixmap = page.get_pixmap(matrix=matrix, alpha=False)
         return pixmap.tobytes("png")
     finally:
         doc.close()
+
+
+def clamp_render_zoom(page_width: float, page_height: float, zoom: float) -> float:
+    """Return zoom so that width*height*zoom^2 does not exceed MAX_RENDER_PIXELS."""
+    if zoom <= 0:
+        zoom = MIN_RENDER_ZOOM
+    width = abs(float(page_width))
+    height = abs(float(page_height))
+    if width <= 0 or height <= 0:
+        return max(zoom, MIN_RENDER_ZOOM)
+
+    area = width * height
+    max_pixels = float(MAX_RENDER_PIXELS)
+    if area * zoom * zoom <= max_pixels:
+        return zoom
+
+    # Hard cap wins over MIN_RENDER_ZOOM when the page is extremely large.
+    limited = (max_pixels / area) ** 0.5
+    return max(limited, 1e-3)
 
 
 def _ensure_page_in_range(doc: pymupdf.Document, page_number: int) -> None:

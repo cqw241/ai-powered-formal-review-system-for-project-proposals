@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createProject,
   getPageText,
@@ -57,6 +57,9 @@ function formatDateTime(value: string): string {
 
 export default function App() {
   const [view, setView] = useState<View>({ kind: 'list' })
+  const viewRef = useRef(view)
+  viewRef.current = view
+
   const [projects, setProjects] = useState<Project[]>([])
   const [listLoading, setListLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
@@ -86,6 +89,11 @@ export default function App() {
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
 
+  const isActiveDetail = useCallback((projectId: string) => {
+    const current = viewRef.current
+    return current.kind === 'detail' && current.projectId === projectId
+  }, [])
+
   const loadProjects = useCallback(async () => {
     setListLoading(true)
     setListError(null)
@@ -99,21 +107,33 @@ export default function App() {
     }
   }, [])
 
-  const loadMaterials = useCallback(async (projectId: string) => {
-    setMaterialsLoading(true)
-    setMaterialsError(null)
-    try {
-      const data = await listMaterials(projectId)
-      setMaterials(data)
-      return data
-    } catch (error) {
-      setMaterialsError(error instanceof Error ? error.message : '加载材料列表失败')
-      setMaterials([])
-      return [] as Material[]
-    } finally {
-      setMaterialsLoading(false)
-    }
-  }, [])
+  const loadMaterials = useCallback(
+    async (projectId: string) => {
+      if (isActiveDetail(projectId)) {
+        setMaterialsLoading(true)
+        setMaterialsError(null)
+      }
+      try {
+        const data = await listMaterials(projectId)
+        if (isActiveDetail(projectId)) {
+          setMaterials(data)
+          setMaterialsError(null)
+        }
+        return data
+      } catch (error) {
+        if (isActiveDetail(projectId)) {
+          setMaterialsError(error instanceof Error ? error.message : '加载材料列表失败')
+          setMaterials([])
+        }
+        return [] as Material[]
+      } finally {
+        if (isActiveDetail(projectId)) {
+          setMaterialsLoading(false)
+        }
+      }
+    },
+    [isActiveDetail],
+  )
 
   useEffect(() => {
     void loadProjects()
@@ -121,13 +141,17 @@ export default function App() {
 
   useEffect(() => {
     if (view.kind !== 'detail') {
+      setMaterialsLoading(false)
+      setUploading(false)
       return
     }
+    const projectId = view.projectId
     let cancelled = false
     setDetailLoading(true)
     setDetailError(null)
     setDetail(null)
     setMaterials([])
+    setMaterialsError(null)
     setSelectedId(null)
     setPageNumber(1)
     setPageText(null)
@@ -135,20 +159,21 @@ export default function App() {
     setUploadError(null)
     setUploadNotice(null)
     setUploadFiles(null)
+    setUploading(false)
 
-    void Promise.all([getProject(view.projectId), loadMaterials(view.projectId)])
+    void Promise.all([getProject(projectId), loadMaterials(projectId)])
       .then(([project]) => {
-        if (!cancelled) {
+        if (!cancelled && isActiveDetail(projectId)) {
           setDetail(project)
         }
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && isActiveDetail(projectId)) {
           setDetailError(error instanceof Error ? error.message : '加载项目失败')
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!cancelled && isActiveDetail(projectId)) {
           setDetailLoading(false)
         }
       })
@@ -156,7 +181,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [view, loadMaterials])
+  }, [view, loadMaterials, isActiveDetail])
 
   const selectedMaterial = useMemo(
     () => materials.find((item) => item.id === selectedId) ?? null,
@@ -264,6 +289,7 @@ export default function App() {
       return
     }
 
+    const projectId = detail.id
     setUploading(true)
     setUploadError(null)
     setUploadNotice(null)
@@ -274,7 +300,7 @@ export default function App() {
 
     for (const file of files) {
       try {
-        const material = await uploadMaterial(detail.id, file, uploadCategory)
+        const material = await uploadMaterial(projectId, file, uploadCategory)
         if (material.status === 'FAILED') {
           failures.push(
             `${material.original_filename}：${material.error_summary || '解析失败'}`,
@@ -287,7 +313,12 @@ export default function App() {
       }
     }
 
-    const refreshed = await loadMaterials(detail.id)
+    const refreshed = await loadMaterials(projectId)
+    // Ignore late results after the user navigated to another project.
+    if (!isActiveDetail(projectId)) {
+      return
+    }
+
     if (successes.length > 0) {
       setUploadNotice(`已上传 ${successes.length} 个文件：${successes.join('；')}`)
       const ready = refreshed.find((item) => item.status === 'READY')
