@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
 
     started = time.perf_counter()
     try:
-        result = analyze_image(image, prompt=USER_PROMPT, settings=settings)
+        outcome = analyze_image(image, prompt=USER_PROMPT, settings=settings)
     except LlmConfigurationError as exc:
         print(f"FAIL: {exc} (code={exc.code})")
         return 2
@@ -106,10 +106,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     elapsed_ms = int((time.perf_counter() - started) * 1000)
 
+    result = outcome.result
     evidence = _looks_like_fixture_read(result.summary, result.visible_texts, result.primary_color)
     payload = {
         "model": settings.llm_model,
         "elapsed_ms": elapsed_ms,
+        "request_id": outcome.request_id,
         "result": result.model_dump(),
         "image_read_evidence": evidence,
     }
@@ -124,7 +126,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    print(f"OK: vision smoke passed in {elapsed_ms}ms; evidence={strong}")
+    rid = f" request_id={outcome.request_id}" if outcome.request_id else " request_id=<none>"
+    print(f"OK: vision smoke passed in {elapsed_ms}ms; evidence={strong};{rid}")
     return 0
 
 

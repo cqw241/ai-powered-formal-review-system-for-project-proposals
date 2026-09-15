@@ -34,7 +34,14 @@ docs/competition-review/B01_实现与验收记录.md
 
 ### 1. 后端（uv）
 
-仓库若位于 `/mnt/d` 等不支持 symlink 的文件系统，请把虚拟环境放到 Linux 本地盘：
+默认（项目目录支持 symlink 时）：
+
+```bash
+cd backend
+uv sync --extra dev
+```
+
+若当前文件系统**不支持创建符号链接**（例如部分网络盘 / 虚拟挂载），可用下列绕过方式：把虚拟环境放到支持 symlink 的本地路径，并使用 copy 安装：
 
 ```bash
 cd backend
@@ -43,28 +50,24 @@ export UV_LINK_MODE=copy
 uv sync --extra dev --python 3.12
 ```
 
-若项目目录本身支持 symlink，可省略 `UV_PROJECT_ENVIRONMENT`，直接：
-
-```bash
-cd backend
-uv sync --extra dev
-```
-
 ### 2. 前端
+
+默认：
 
 ```bash
 cd frontend
 npm install
 ```
 
-若目录在 `/mnt/d` 等不支持 symlink 的文件系统上，改用：
+若当前文件系统不支持 symlink，改用：
 
 ```bash
 cd frontend
 npm install --no-bin-links
 ```
 
-本仓库的 `npm` scripts 已通过 `node ./node_modules/...` 调用工具，不依赖 `.bin` 符号链接。
+本仓库的 `npm` scripts 已通过 `node ./node_modules/...` 调用工具，不依赖 `.bin` 符号链接。上述 `UV_PROJECT_ENVIRONMENT` / `--no-bin-links` 仅是无 symlink 环境的绕过，不是产品要求。
+
 ### 3. 配置
 
 ```bash
@@ -91,7 +94,7 @@ API Key 只放在服务端 `.env`。不要提交真实密钥。
 ```bash
 # 终端 1 — 后端
 cd backend
-export UV_PROJECT_ENVIRONMENT="$HOME/.venvs/guizheng-ai-backend"   # 如使用了该路径
+# 若使用了无 symlink 绕过，先 export UV_PROJECT_ENVIRONMENT=...
 uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 

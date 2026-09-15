@@ -42,6 +42,13 @@ class ImageAnalysisResult(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0)
 
 
+class AnalyzeImageOutcome(BaseModel):
+    """Application-facing vision call outcome, including transport metadata."""
+
+    result: ImageAnalysisResult
+    request_id: str | None = None
+
+
 def image_analysis_json_schema() -> dict[str, Any]:
     """JSON Schema sent to providers that support response_format.json_schema."""
     return {

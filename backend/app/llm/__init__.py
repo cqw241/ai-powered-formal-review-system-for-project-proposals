@@ -7,9 +7,10 @@ from app.llm.errors import (
     LlmInvalidOutputError,
     LlmRequestError,
 )
-from app.llm.schemas import ImageAnalysisResult, ImageInput
+from app.llm.schemas import AnalyzeImageOutcome, ImageAnalysisResult, ImageInput
 
 __all__ = [
+    "AnalyzeImageOutcome",
     "ImageAnalysisResult",
     "ImageInput",
     "LlmConfigurationError",

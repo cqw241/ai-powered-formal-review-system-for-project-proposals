@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 class ProjectCreate(BaseModel):
@@ -27,6 +27,18 @@ class ProjectRead(BaseModel):
     id: str
     name: str
     created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def ensure_utc(cls, value: datetime) -> datetime:
+        # SQLite may round-trip timezone-aware values as naive; treat naive as UTC.
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime) -> str:
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 class HealthResponse(BaseModel):

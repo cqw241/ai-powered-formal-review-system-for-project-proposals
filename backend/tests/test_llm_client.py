@@ -80,15 +80,16 @@ def test_analyze_image_sends_image_and_json_schema():
             }
         )
 
-    result = analyze_image(
+    outcome = analyze_image(
         _image(),
         prompt="描述图像",
         settings=_settings(),
         client=_FakeClient(handler),
     )
 
-    assert result.visible_texts == ["A42"]
-    assert result.object_count == 2
+    assert outcome.request_id == "req_test_1"
+    assert outcome.result.visible_texts == ["A42"]
+    assert outcome.result.object_count == 2
 
     assert captured["model"] == "test-vision-model"
     user_content = captured["messages"][1]["content"]
@@ -207,10 +208,11 @@ def test_analyze_image_accepts_single_element_array_wrapper():
             choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))],
         )
 
-    result = analyze_image(
+    outcome = analyze_image(
         _image(),
         prompt="描述图像",
         settings=_settings(),
         client=_FakeClient(handler),
     )
-    assert result.primary_color == "blue"
+    assert outcome.result.primary_color == "blue"
+    assert outcome.request_id == "req_wrap"

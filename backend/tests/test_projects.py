@@ -15,16 +15,18 @@ def test_create_and_get_project(client):
     body = created.json()
     assert body["name"] == "青年科研创新培育计划-样例"
     assert body["id"]
-    assert body["created_at"]
+    assert body["created_at"].endswith("Z")
 
     listed = client.get("/api/projects")
     assert listed.status_code == 200
     assert len(listed.json()) == 1
     assert listed.json()[0]["id"] == body["id"]
+    assert listed.json()[0]["created_at"].endswith("Z")
 
     detail = client.get(f"/api/projects/{body['id']}")
     assert detail.status_code == 200
     assert detail.json()["name"] == body["name"]
+    assert detail.json()["created_at"].endswith("Z")
 
 
 def test_create_rejects_blank_name(client):

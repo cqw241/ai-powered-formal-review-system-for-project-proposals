@@ -22,6 +22,7 @@ from app.llm.errors import (
     LlmRequestError,
 )
 from app.llm.schemas import (
+    AnalyzeImageOutcome,
     ImageAnalysisResult,
     ImageInput,
     image_analysis_json_schema,
@@ -59,11 +60,12 @@ def analyze_image(
     settings: Settings | None = None,
     client: OpenAI | None = None,
     system_prompt: str = DEFAULT_SYSTEM_PROMPT,
-) -> ImageAnalysisResult:
+) -> AnalyzeImageOutcome:
     """Send one image + text prompt and return a validated application result.
 
     ``client`` may be injected in unit tests. Provider SDK response objects are
-    not returned to callers.
+    not returned to callers. ``request_id`` is included when the provider
+    returns one (success and failure paths).
     """
     app_settings = settings or get_settings()
     if not app_settings.llm_configured:
@@ -120,7 +122,8 @@ def analyze_image(
             request_id=request_id,
         ) from exc
 
-    return _parse_and_validate(content, request_id=request_id)
+    result = _parse_and_validate(content, request_id=request_id)
+    return AnalyzeImageOutcome(result=result, request_id=request_id)
 
 
 def _build_request(
