@@ -134,6 +134,51 @@ def test_analyze_image_invalid_structure():
     assert exc_info.value.code == "llm_schema_validation_failed"
 
 
+def test_analyze_image_rejects_stringly_typed_numbers():
+    def handler(_kwargs):
+        return _ok_response(
+            {
+                "summary": "类型应为数字",
+                "visible_texts": [],
+                "primary_color": "red",
+                "object_count": "2",
+                "confidence": "0.5",
+            }
+        )
+
+    with pytest.raises(LlmInvalidOutputError) as exc_info:
+        analyze_image(
+            _image(),
+            prompt="描述图像",
+            settings=_settings(),
+            client=_FakeClient(handler),
+        )
+    assert exc_info.value.code == "llm_schema_validation_failed"
+
+
+def test_analyze_image_rejects_unknown_fields():
+    def handler(_kwargs):
+        return _ok_response(
+            {
+                "summary": "多了一个字段",
+                "visible_texts": [],
+                "primary_color": "blue",
+                "object_count": 1,
+                "confidence": 0.5,
+                "unexpected": True,
+            }
+        )
+
+    with pytest.raises(LlmInvalidOutputError) as exc_info:
+        analyze_image(
+            _image(),
+            prompt="描述图像",
+            settings=_settings(),
+            client=_FakeClient(handler),
+        )
+    assert exc_info.value.code == "llm_schema_validation_failed"
+
+
 def test_analyze_image_invalid_json():
     def handler(_kwargs):
         return SimpleNamespace(

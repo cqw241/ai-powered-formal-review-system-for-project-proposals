@@ -96,9 +96,10 @@ export default function App() {
     setCreateNotice(null)
     try {
       const project = await createProject(trimmed)
+      // Persist success independently of any later list refresh.
       setName('')
       setCreateNotice(`已创建项目「${project.name}」`)
-      await loadProjects()
+      setProjects((prev) => [project, ...prev.filter((item) => item.id !== project.id)])
       setView({ kind: 'detail', projectId: project.id })
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : '创建项目失败')

@@ -27,6 +27,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.config import get_settings  # noqa: E402
 from app.llm import (  # noqa: E402
+    ImageAnalysisResult,
     ImageInput,
     LlmConfigurationError,
     LlmError,
@@ -42,8 +43,12 @@ USER_PROMPT = (
 )
 
 
-def _looks_like_fixture_read(result_summary: str, texts: list[str], primary_color: str) -> list[str]:
-    """Return list of soft evidence that the model actually looked at the image."""
+def collect_fixture_evidence(
+    result_summary: str,
+    texts: list[str],
+    primary_color: str,
+) -> list[str]:
+    """Return content signals that the model actually looked at the fixture."""
     evidence: list[str] = []
     joined = " ".join([result_summary, *texts, primary_color]).lower()
     # Fixture contains block glyphs "A42", a red rectangle, and a blue diamond.
@@ -51,11 +56,26 @@ def _looks_like_fixture_read(result_summary: str, texts: list[str], primary_colo
         evidence.append("visible_text_contains_A42")
     if any(token in joined for token in ("red", "红", "赤")):
         evidence.append("mentions_red")
-    if any(token in joined for token in ("blue", "蓝", "蓝")):
+    if any(token in joined for token in ("blue", "蓝")):
         evidence.append("mentions_blue")
     if result_summary.strip():
         evidence.append("non_empty_summary")
     return evidence
+
+
+def smoke_result_passes(result: ImageAnalysisResult, evidence: list[str]) -> tuple[bool, str]:
+    """Hard pass criteria for the synthetic fixture (no live API required to unit-test).
+
+    Requires both red and blue signals plus at least two counted objects.
+    A42 text is optional supporting evidence, not a hard gate.
+    """
+    has_red = "mentions_red" in evidence
+    has_blue = "mentions_blue" in evidence
+    if not (has_red and has_blue):
+        return False, "必须同时识别红色与蓝色"
+    if result.object_count < 2:
+        return False, "object_count 至少为 2"
+    return True, "ok"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     elapsed_ms = int((time.perf_counter() - started) * 1000)
 
     result = outcome.result
-    evidence = _looks_like_fixture_read(result.summary, result.visible_texts, result.primary_color)
+    evidence = collect_fixture_evidence(result.summary, result.visible_texts, result.primary_color)
     if outcome.request_id:
         print(f"request_id={outcome.request_id}")
     else:
@@ -122,16 +142,12 @@ def main(argv: list[str] | None = None) -> int:
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
-    # Require at least one content-based signal beyond a non-empty summary.
-    strong = [item for item in evidence if item != "non_empty_summary"]
-    if not strong:
-        print(
-            "FAIL: 结构化结果合法，但未能证明读取了测试图像内容"
-            "（未识别到 A42 / 红 / 蓝 等预期信号）。"
-        )
+    passed, reason = smoke_result_passes(result, evidence)
+    if not passed:
+        print(f"FAIL: 结构化结果合法，但未满足图像内容验收条件（{reason}）。")
         return 1
 
-    print(f"OK: vision smoke passed in {elapsed_ms}ms; evidence={strong}")
+    print(f"OK: vision smoke passed in {elapsed_ms}ms; evidence={evidence}")
     return 0
 
 

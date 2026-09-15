@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ImageInput(BaseModel):
@@ -26,7 +26,12 @@ class ImageAnalysisResult(BaseModel):
 
     Fields are intentionally generic so B02/B03 can reuse the same adapter
     while supplying their own prompts and (later) tighter schemas.
+
+    Strict mode rejects stringly-typed numbers (e.g. ``"2"``, ``"0.5"``) and
+    unknown fields; callers must not treat coercion as validation success.
     """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
 
     summary: str = Field(..., min_length=1, description="简短中文摘要")
     visible_texts: list[str] = Field(
@@ -40,6 +45,18 @@ class ImageAnalysisResult(BaseModel):
     )
     object_count: int = Field(..., ge=0, description="可辨认主体对象数量")
     confidence: float = Field(..., ge=0.0, le=1.0)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _confidence_from_json_number(cls, value: object) -> object:
+        # JSON has one number type; json.loads may yield int for whole values.
+        # Allow int→float only. Reject strings like "0.5" and bools.
+        if isinstance(value, bool) or isinstance(value, str):
+            raise ValueError("confidence must be a JSON number, not a string or boolean")
+        if isinstance(value, int):
+            return float(value)
+        return value
+
 
 
 class AnalyzeImageOutcome(BaseModel):
