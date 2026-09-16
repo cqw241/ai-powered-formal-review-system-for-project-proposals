@@ -57,6 +57,7 @@ docs/competition-review/
   B07_实现与验收记录.md
   B08_实现与验收记录.md
   W3_并行开发契约.md
+  W3_接线与验收记录.md
 .env.example
 ```
 
@@ -197,16 +198,16 @@ uv run python -c "from app.db import init_db; init_db(); print('ok')"
 | `GET` | `/api/projects/{project_id}/reviews` | 任务列表（新到旧，含逐项结果） |
 | `GET` | `/api/projects/{project_id}/reviews/{task_id}` | 指定任务 |
 
-条目 = 内置 RULE-007 + 勾选的已启用规则。发起时先落库「运行中」任务与逐项占位，刷新可续看；结束后再写终态。RULE-007 复用 `POST /api/projects/{id}/funding-review`，不写入 `rules` 表。PASS/FAIL → 已完成（带核对结论）；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。其它已启用规则本阶段标「未执行」并绑定当时版本快照，**不按学科类别上限判 PASS/FAIL**。无已启用规则时仍可只跑 RULE-007。现有「开始核对」入口保留。POST 需要 JSON body。
+条目 = 内置 RULE-002/003/004/006/007/010 + 勾选的已启用规则（通常是 RULE-005）。发起时先落库「运行中」任务与逐项占位，刷新可续看；结束后再写终态并写入 `review_item_results`。RULE-007 仍复用经费核对。PASS/FAIL → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。现有「开始核对」入口保留。POST 需要 JSON body。
 
-## B06 使用说明
+## B06 / W3 使用说明
 
-1. 顶部导航进入「政策与候选要求」，上传模拟申报指南 PDF，将经费上限候选启为规则。
-2. 打开项目，上传申报书与预算表。
-3. 在「审查工作台」勾选已启用规则（RULE-007 始终纳入），点击「开始审查」。
-4. 工作台显示任务运行状态与逐项结果：RULE-007 为已完成/待确认/失败（带核对结论）；勾选但无执行器的规则为未执行，并显示当时版本快照。
-5. 刷新页面后再打开该项目，任务与逐项状态仍在。
-6. 下方「开始核对」仍可单独跑 RULE-007（B03/B05 入口保留）。
+1. 顶部导航进入「政策与候选要求」，上传模拟申报指南 PDF，将对应类别的经费上限启为规则。
+2. 打开项目，上传申报书、预算表和承诺书。
+3. 在「审查工作台」确认内置规则已锁定，勾选 RULE-005，点击「开始审查」。
+4. 同一任务中查看名称、负责人、周期、上限、预算合计、申请经费一致和签署日期的逐项结果；点击证据可打开对应页。
+5. 刷新后再打开该项目，任务与逐项状态仍在。
+6. 下方「开始核对」仍可单独跑 RULE-007。
 
 样例政策：
 
@@ -251,6 +252,14 @@ npm run build
 
 结果写入 `review_item_results`，工作台展示摘要与可点击原文证据。PASS/FAIL → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。无已启用 RULE-005 时仍跑其余内置规则。B11 通用双文档对照与 B12 人工处置不在本分支。
 
+## B10 接续入口
+
+- 审查任务：`POST/GET /api/projects/{id}/reviews`
+- 通用结果：`review_item_results` + `RuleExecutionResult.evidence`
+- 已启用规则：`GET /api/rules`
+
+B10 再做必需材料与条件附件（RULE-001/008/009）；**不要**在本分支提前实现。
+
 ## 验收记录
 
 - [B01 实现与验收记录](docs/competition-review/B01_实现与验收记录.md)
@@ -261,6 +270,7 @@ npm run build
 - [B06 实现与验收记录](docs/competition-review/B06_实现与验收记录.md)
 - [B07 实现与验收记录](docs/competition-review/B07_实现与验收记录.md)
 - [B08 实现与验收记录](docs/competition-review/B08_实现与验收记录.md)
+- [W3 接线与验收记录](docs/competition-review/W3_接线与验收记录.md)
 
 ## 可选：安装环境排障
 

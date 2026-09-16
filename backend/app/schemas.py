@@ -14,6 +14,7 @@ from app.models import (
     ReviewItemStatus,
     ReviewTaskStatus,
 )
+from app.review_contract import RuleExecutionResult
 
 
 class ProjectCreate(BaseModel):
@@ -381,7 +382,7 @@ class PolicyPageTextResponse(BaseModel):
 
 
 class ReviewTaskCreate(BaseModel):
-    """Selected enabled rules from GET /api/rules. RULE-007 is always included."""
+    """Selected enabled rules from GET /api/rules. Built-in W3 rules are always included."""
 
     rule_ids: list[str] = Field(default_factory=list)
 
@@ -399,6 +400,7 @@ class ReviewItemRead(BaseModel):
     snapshot: BoundRuleSnapshot | None = None
     funding_review_id: str | None = None
     sort_order: int
+    result: RuleExecutionResult | None = None
 
 
 class ReviewTaskRead(BaseModel):

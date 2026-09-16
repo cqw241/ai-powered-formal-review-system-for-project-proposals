@@ -38,7 +38,7 @@ def create_review(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except RuleNotEnabledError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return review_service.to_review_task_read(task)
+    return review_service.to_review_task_read(task, db)
 
 
 @router.get(
@@ -48,7 +48,7 @@ def create_review(
 def list_reviews(project_id: str, db: Session = Depends(get_db)) -> list[ReviewTaskRead]:
     _get_project_or_404(db, project_id)
     tasks = review_service.list_review_tasks(db, project_id)
-    return [review_service.to_review_task_read(item) for item in tasks]
+    return [review_service.to_review_task_read(item, db) for item in tasks]
 
 
 @router.get(
@@ -60,4 +60,4 @@ def get_review(project_id: str, task_id: str, db: Session = Depends(get_db)) -> 
     task = review_service.get_review_task(db, project_id, task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="审查任务不存在")
-    return review_service.to_review_task_read(task)
+    return review_service.to_review_task_read(task, db)

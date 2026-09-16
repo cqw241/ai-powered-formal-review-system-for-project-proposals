@@ -442,7 +442,11 @@ export default function App() {
     // Non-READY materials only show status/error; preview effect will not fetch pages.
   }
 
-  function openEvidence(side: FundingSide | null) {
+  function openEvidence(side: {
+    material_id?: string | null
+    page_number?: number | null
+    bbox?: EvidenceBBox | null
+  } | null) {
     if (!side?.material_id || !side.page_number) {
       return
     }
@@ -633,7 +637,8 @@ export default function App() {
                         <span className="status-chip">尚未审查</span>
                       )}
                       <span className="muted inline-note">
-                        工作台发起审查；下方「开始核对」仍可单独跑 RULE-007。RULE-005 本阶段不按学科类别裁决。
+                        工作台一次审查名称、负责人、周期、经费、预算合计与签署日期。下方「开始核对」仍可单独跑
+                        RULE-007。
                       </span>
                     </dd>
                   </div>
@@ -643,6 +648,13 @@ export default function App() {
                   key={detail.id}
                   projectId={detail.id}
                   onTaskCreated={() => void loadFundingReview(detail.id)}
+                  onOpenEvidence={(target) =>
+                    openEvidence({
+                      material_id: target.materialId,
+                      page_number: target.pageNumber,
+                      bbox: target.bbox,
+                    })
+                  }
                 />
 
                 <div className="funding-section">
@@ -657,7 +669,7 @@ export default function App() {
                     </button>
                   </div>
                   <p className="muted funding-hint">
-                    提取申报书「申请经费」与预算表「申请总额」，统一换算为元后比较。已启用 RULE-005 只写入并展示 bound_rules 快照，本阶段不按上限判 PASS/FAIL。停用后新审查不再包含，旧结果仍显示当时版本。
+                    提取申报书「申请经费」与预算表「申请总额」，统一换算为元后比较。分类经费上限在上方审查工作台的 RULE-005 中判定；此处仍是 RULE-007。停用后新审查不再绑定该规则，旧核对仍显示当时版本。
                   </p>
                   {fundingHistory.length > 1 ? (
                     <div className="review-history" data-testid="funding-review-history">

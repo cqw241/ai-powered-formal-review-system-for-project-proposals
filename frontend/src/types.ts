@@ -210,6 +210,27 @@ export type ReviewItemStatus =
   | 'FAILED'
   | 'NOT_EXECUTED'
 
+export type ReviewEvidence = {
+  material_id: string | null
+  category: string | null
+  original_filename: string | null
+  field_name: string | null
+  raw_value: string | null
+  normalized_value: string | number | boolean | null
+  page_number: number | null
+  quote: string | null
+  bbox: EvidenceBBox | null
+  reliable: boolean | null
+  reason: string | null
+}
+
+export type RuleExecutionResult = {
+  status: ReviewStatus
+  summary: string
+  evidence: ReviewEvidence[]
+  data: Record<string, unknown>
+}
+
 export type ReviewItem = {
   id: string
   rule_code: string
@@ -223,6 +244,7 @@ export type ReviewItem = {
   snapshot: BoundRule | null
   funding_review_id: string | null
   sort_order: number
+  result?: RuleExecutionResult | null
 }
 
 export type ReviewTask = {
