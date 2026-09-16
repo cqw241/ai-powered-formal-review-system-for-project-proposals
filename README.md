@@ -1,6 +1,6 @@
 # 规证AI
 
-高校项目申报材料形式审查辅助应用。当前分支实现 **B07 身份一致性核对**：在 B01–B06 与 W3 公共执行契约之上，提供 RULE-002/003 领域执行器（项目名称、负责人跨文件核对）。工作台接入由 W3 集成负责人完成。
+高校项目申报材料形式审查辅助应用。当前分支做 **W3 审查接线**：在一次审查任务中运行 RULE-002/003/004/005/006/007/010（名称、负责人、周期、经费上限、预算合计、申请经费一致、签署日期）。
 
 > 本版本仅供本地开发。未实现登录与项目权限，**不要当作可安全公开部署的版本**。
 
@@ -35,6 +35,10 @@ backend/
     services/policy_storage.py
     services/rules.py
     services/reviews.py
+    services/budget_extract.py
+    services/budget_review.py
+    services/date_extract.py
+    services/date_review.py
     services/pdf.py
     review_contract.py      # W3 执行器契约
     llm/                # 云端图像调用（文本不足时可选回退）
@@ -51,6 +55,7 @@ docs/competition-review/
   B05_实现与验收记录.md
   B06_实现与验收记录.md
   B07_实现与验收记录.md
+  B08_实现与验收记录.md
   W3_并行开发契约.md
 .env.example
 ```
@@ -230,21 +235,21 @@ cd frontend
 npm run build
 ```
 
-## B07 身份一致性（RULE-002/003）
+## W3 一次审查（本分支）
 
-领域执行器：`execute_identity_rule(db, context) -> RuleExecutionResult`。
+开始审查后，同一任务内置并执行：
 
-| 规则 | 行为 |
-|---|---|
-| RULE-002 | 三类材料项目名称提取、Unicode 空白归一（含 CJK 换行空格），规范化后比较 |
-| RULE-003 | 三类材料负责人姓名提取与冲突判断 |
+| 规则 | 执行器 | 行为 |
+|---|---|---|
+| RULE-002 | `execute_identity_rule` | 三类材料项目名称，Unicode 空白归一后比较 |
+| RULE-003 | `execute_identity_rule` | 三类材料负责人姓名 |
+| RULE-004 | `execute_date_rule` | 执行期窗口与 ≤24 个月 |
+| RULE-005 | `execute_budget_rule` | 分类经费上限（勾选已启用规则；按项目类别选用对应快照） |
+| RULE-006 | `execute_budget_rule` | 预算科目合计，容差 1 元 |
+| RULE-007 | 既有经费核对 | 申报书申请经费 vs 预算申请总额 |
+| RULE-010 | `execute_date_rule` | 承诺书签署日期 |
 
-- PASS：三处可靠且规范化后一致（承诺书换行标题与申报书一致）
-- FAIL：至少两处可靠证据规范化后不同（如 PKG-B 承诺书缺「认知负荷与」、预算表「林书彦」）
-- NEED_HUMAN_REVIEW：缺就绪材料、标题扫描模糊、手写姓名无法稳定识别；**不把「没找到」当 FAIL**
-- 证据：`ReviewEvidence`（材料、字段、原文、规范化值、页码、摘录、bbox）
-
-本分支不修改 `services/reviews.py` / 工作台；接入与一次审查联调由 W3 集成负责人完成。
+结果写入 `review_item_results`，工作台展示摘要与可点击原文证据。PASS/FAIL → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。无已启用 RULE-005 时仍跑其余内置规则。B11 通用双文档对照与 B12 人工处置不在本分支。
 
 ## 验收记录
 
@@ -255,6 +260,7 @@ npm run build
 - [B05 实现与验收记录](docs/competition-review/B05_实现与验收记录.md)
 - [B06 实现与验收记录](docs/competition-review/B06_实现与验收记录.md)
 - [B07 实现与验收记录](docs/competition-review/B07_实现与验收记录.md)
+- [B08 实现与验收记录](docs/competition-review/B08_实现与验收记录.md)
 
 ## 可选：安装环境排障
 
