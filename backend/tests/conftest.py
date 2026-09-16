@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.config import get_settings
 from app.db import Base, get_db
 from app.main import create_app
 
@@ -15,6 +16,13 @@ from app.main import create_app
 @pytest.fixture()
 def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     db_path = tmp_path / "test.db"
+    materials_path = tmp_path / "materials"
+    materials_path.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("MATERIALS_DIR", str(materials_path))
+    get_settings.cache_clear()
+
     engine = create_engine(
         f"sqlite:///{db_path}",
         connect_args={"check_same_thread": False},
@@ -22,6 +30,9 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         future=True,
     )
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    # Import models so Material table is registered before create_all.
+    from app import models  # noqa: F401
+
     Base.metadata.create_all(bind=engine)
 
     def _override_db():
@@ -36,3 +47,11 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+    get_settings.cache_clear()
+
+
+@pytest.fixture()
+def fixtures_dir() -> str:
+    from pathlib import Path
+
+    return str(Path(__file__).resolve().parents[1] / "fixtures" / "pdfs")

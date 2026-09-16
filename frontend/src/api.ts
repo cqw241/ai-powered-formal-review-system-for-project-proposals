@@ -1,4 +1,4 @@
-import type { ApiErrorBody, Project } from './types'
+import type { ApiErrorBody, Material, MaterialCategory, PageText, Project } from './types'
 
 async function parseError(response: Response): Promise<string> {
   try {
@@ -44,4 +44,44 @@ export async function getProject(id: string): Promise<Project> {
     throw new Error(await parseError(response))
   }
   return response.json() as Promise<Project>
+}
+
+export async function listMaterials(projectId: string): Promise<Material[]> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/materials`)
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<Material[]>
+}
+
+export async function uploadMaterial(
+  projectId: string,
+  file: File,
+  category: MaterialCategory,
+): Promise<Material> {
+  const form = new FormData()
+  form.append('category', category)
+  form.append('file', file)
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/materials`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<Material>
+}
+
+export async function getPageText(materialId: string, pageNumber: number): Promise<PageText> {
+  const response = await fetch(
+    `/api/materials/${encodeURIComponent(materialId)}/pages/${pageNumber}/text`,
+  )
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<PageText>
+}
+
+export function pageImageUrl(materialId: string, pageNumber: number): string {
+  return `/api/materials/${encodeURIComponent(materialId)}/pages/${pageNumber}/image`
 }
