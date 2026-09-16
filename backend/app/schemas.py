@@ -387,6 +387,48 @@ class ReviewTaskCreate(BaseModel):
     rule_ids: list[str] = Field(default_factory=list)
 
 
+class CompareSide(BaseModel):
+    """One column in the B11 dual-document compare view."""
+
+    material_id: str | None = None
+    category: str | None = None
+    original_filename: str | None = None
+    field_name: str
+    field_kind: str | None = None
+    raw_value: str | None = None
+    unit: str | None = None
+    normalized_value: str | int | float | bool | None = None
+    page_number: int | None = None
+    quote: str | None = None
+    bbox: EvidenceBBox | None = None
+    reliable: bool | None = None
+    reason: str | None = None
+    openable: bool = False
+
+
+class LabeledFundingField(BaseModel):
+    """A labeled amount mention; 申请经费 and 总经费 stay distinct."""
+
+    field_name: str
+    field_kind: str
+    raw_value: str | None = None
+    unit: str | None = None
+    page_number: int | None = None
+    bbox: EvidenceBBox | None = None
+    material_id: str | None = None
+    original_filename: str | None = None
+
+
+class EvidenceCompareView(BaseModel):
+    """Generic issue detail for name / amount / date evidence."""
+
+    check_field: str
+    difference: str | None = None
+    difference_yuan: int | None = None
+    sides: list[CompareSide] = Field(default_factory=list)
+    funding_fields: list[LabeledFundingField] = Field(default_factory=list)
+
+
 class ReviewItemRead(BaseModel):
     id: str
     rule_code: str
@@ -401,6 +443,7 @@ class ReviewItemRead(BaseModel):
     funding_review_id: str | None = None
     sort_order: int
     result: RuleExecutionResult | None = None
+    compare: EvidenceCompareView | None = None
 
 
 class ReviewTaskRead(BaseModel):

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { listReviews, listRules, startReview } from './api'
+import EvidenceCompare from './EvidenceCompare'
 import type {
   EvidenceBBox,
   ReviewEvidence,
@@ -143,6 +144,7 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [detailItemId, setDetailItemId] = useState<string | null>(null)
   const selectionReady = useRef(false)
 
   const enabledRules = useMemo(() => rules.filter((item) => item.enabled), [rules])
@@ -198,6 +200,10 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
     void load()
   }, [load])
 
+  const visibleDetailId = displayTask?.items.some((item) => item.id === detailItemId)
+    ? detailItemId
+    : null
+
   function toggleRule(ruleId: string) {
     setSelectedIds((prev) =>
       prev.includes(ruleId) ? prev.filter((id) => id !== ruleId) : [...prev, ruleId],
@@ -228,7 +234,7 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
         </button>
       </div>
       <p className="muted funding-hint">
-        一次审查内置 RULE-002/003/004/006/007/010。勾选已启用的 RULE-005 按项目类别用当时版本上限。开始后先落库「运行中」，刷新可续看。「失败」只表示执行出错；规则不通过是已完成。点击证据原文可打开对应页。
+        一次审查内置 RULE-002/003/004/006/007/010。勾选已启用的 RULE-005 按项目类别用当时版本上限。开始后先落库「运行中」，刷新可续看。「失败」只表示执行出错；规则不通过是已完成。点击证据或「对照原文」可打开双文档对照：字段名、原值、单位与差异；扫描页高亮随缩放对齐。申请经费与总经费分别标明。
       </p>
 
       <div className="rule-picker" data-testid="review-rule-picker">
@@ -376,6 +382,20 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
                     </div>
                   </dl>
                 ) : null}
+                {item.result?.evidence?.length || item.compare?.sides.length ? (
+                  <div className="review-item-actions">
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      data-testid={`open-compare-${itemKey(item)}`}
+                      onClick={() =>
+                        setDetailItemId((prev) => (prev === item.id ? null : item.id))
+                      }
+                    >
+                      {visibleDetailId === item.id ? '收起对照' : '对照原文'}
+                    </button>
+                  </div>
+                ) : null}
                 {item.result?.evidence?.length ? (
                   <ul className="evidence-list">
                     {item.result.evidence.map((evidence, index) => (
@@ -384,6 +404,9 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
                       </li>
                     ))}
                   </ul>
+                ) : null}
+                {visibleDetailId === item.id && item.compare ? (
+                  <EvidenceCompare item={item} onOpenEvidence={onOpenEvidence} />
                 ) : null}
               </li>
             ))}

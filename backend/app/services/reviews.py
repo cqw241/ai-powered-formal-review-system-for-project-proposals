@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -30,9 +31,11 @@ from app.schemas import BoundRuleSnapshot, FundingFinding, FundingReviewRead, Re
 from app.services import funding_review as funding_service
 from app.services.budget_review import execute_budget_rule
 from app.services.date_review import execute_date_rule
+from app.services.evidence_compare import build_compare_view
 from app.services.identity_review import execute_identity_rule
 from app.services.review_results import load_rule_result, persist_rule_result
 from app.services.rules import bound_snapshot, current_version, load_rule
+from app.services.storage import material_file_path
 
 RULE_007 = "RULE-007"
 NOT_EXECUTED_SUMMARY = "本阶段无执行器，已绑定当时版本快照。"
@@ -126,6 +129,9 @@ def _to_item_read(item: ReviewItem, db: Session | None) -> ReviewItemRead:
         snapshot = BoundRuleSnapshot.model_validate(json.loads(item.snapshot_json))
     check_status = FundingReviewStatus(item.check_status) if item.check_status else None
     result = load_rule_result(db, item.id) if db is not None else None
+    compare = None
+    if result is not None:
+        compare = build_compare_view(result, material_paths=_material_paths_for_result(result))
     return ReviewItemRead(
         id=item.id,
         rule_code=item.rule_code,
@@ -140,7 +146,23 @@ def _to_item_read(item: ReviewItem, db: Session | None) -> ReviewItemRead:
         funding_review_id=item.funding_review_id,
         sort_order=item.sort_order,
         result=result,
+        compare=compare,
     )
+
+
+def _material_paths_for_result(result: RuleExecutionResult) -> dict[str, Path]:
+    paths: dict[str, Path] = {}
+    for evidence in result.evidence:
+        material_id = evidence.material_id
+        if not material_id or material_id in paths:
+            continue
+        try:
+            path = material_file_path(material_id)
+        except ValueError:
+            continue
+        if path.is_file():
+            paths[material_id] = path
+    return paths
 
 
 def _load_selected_rules(db: Session, rule_ids: list[str]) -> list[tuple[Rule, RuleVersion]]:
@@ -292,9 +314,9 @@ def _run_rule_007(db: Session, project_id: str, item: ReviewItem) -> None:
 def _funding_as_result(read: FundingReviewRead) -> RuleExecutionResult:
     finding = read.finding
     evidence: list[ReviewEvidence] = []
-    for side, field_name in (
-        (finding.left, "申报书申请经费"),
-        (finding.right, "预算申请总额"),
+    for side, fallback in (
+        (finding.left, "申请经费"),
+        (finding.right, "申请总额"),
     ):
         if side is None:
             continue
@@ -313,7 +335,7 @@ def _funding_as_result(read: FundingReviewRead) -> RuleExecutionResult:
                 material_id=side.material_id,
                 category=side.category.value if side.category else None,
                 original_filename=side.original_filename,
-                field_name=field_name,
+                field_name=_funding_field_name(side.field_kind, side.field_label, fallback),
                 raw_value=side.raw_value,
                 normalized_value=side.amount_yuan,
                 page_number=side.page_number,
@@ -329,10 +351,18 @@ def _funding_as_result(read: FundingReviewRead) -> RuleExecutionResult:
         evidence=evidence,
         data={
             "rule_code": RULE_007,
+            "check_field": finding.check_field or "申请经费",
             "difference_yuan": finding.difference_yuan,
             "funding_review_id": read.id,
         },
     )
+
+
+def _funding_field_name(field_kind: str | None, field_label: str | None, fallback: str) -> str:
+    if field_kind == "total_funding":
+        return (field_label or "").strip() or "项目总经费"
+    label = (field_label or "").strip()
+    return label or fallback
 
 
 def _fail_remaining(db: Session, project_id: str, task_id: str, summary: str) -> None:

@@ -1,6 +1,6 @@
 # 规证AI
 
-高校项目申报材料形式审查辅助应用。当前分支做 **W3 审查接线**：在一次审查任务中运行 RULE-002/003/004/005/006/007/010（名称、负责人、周期、经费上限、预算合计、申请经费一致、签署日期）。
+高校项目申报材料形式审查辅助应用。当前分支做 **B11 证据对照**：通用问题详情、双文档对照与扫描页高亮；一次审查仍运行 RULE-002/003/004/005/006/007/010。
 
 > 本版本仅供本地开发。未实现登录与项目权限，**不要当作可安全公开部署的版本**。
 
@@ -35,6 +35,7 @@ backend/
     services/policy_storage.py
     services/rules.py
     services/reviews.py
+    services/evidence_compare.py
     services/budget_extract.py
     services/budget_review.py
     services/date_extract.py
@@ -47,6 +48,8 @@ backend/
 frontend/
   src/PolicyWorkspace.tsx
   src/ReviewWorkspace.tsx
+  src/EvidenceCompare.tsx
+  src/PagePreview.tsx
 docs/competition-review/
   B01_实现与验收记录.md
   B02_实现与验收记录.md
@@ -205,7 +208,7 @@ uv run python -c "from app.db import init_db; init_db(); print('ok')"
 1. 顶部导航进入「政策与候选要求」，上传模拟申报指南 PDF，将对应类别的经费上限启为规则。
 2. 打开项目，上传申报书、预算表和承诺书。
 3. 在「审查工作台」确认内置规则已锁定，勾选 RULE-005，点击「开始审查」。
-4. 同一任务中查看名称、负责人、周期、上限、预算合计、申请经费一致和签署日期的逐项结果；点击证据可打开对应页。
+4. 同一任务中查看名称、负责人、周期、上限、预算合计、申请经费一致和签署日期的逐项结果；点击「对照原文」查看字段名、原值、单位与差异，并可打开对应页。扫描页高亮随缩放对齐；申请经费与总经费分别标明。
 5. 刷新后再打开该项目，任务与逐项状态仍在。
 6. 下方「开始核对」仍可单独跑 RULE-007。
 
@@ -250,7 +253,7 @@ npm run build
 | RULE-007 | 既有经费核对 | 申报书申请经费 vs 预算申请总额 |
 | RULE-010 | `execute_date_rule` | 承诺书签署日期 |
 
-结果写入 `review_item_results`，工作台展示摘要与可点击原文证据。PASS/FAIL → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。无已启用 RULE-005 时仍跑其余内置规则。B11 通用双文档对照与 B12 人工处置不在本分支。
+结果写入 `review_item_results`，工作台展示摘要、双文档对照与可点击原文证据。PASS/FAIL → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。无已启用 RULE-005 时仍跑其余内置规则。B12 人工处置不在本分支。
 
 ## B10 接续入口
 

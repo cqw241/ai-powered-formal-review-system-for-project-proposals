@@ -2,15 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createProject,
   getFundingReview,
-  getPageText,
   getProject,
   listFundingReviews,
   listMaterials,
   listProjects,
-  pageImageUrl,
   runFundingReview,
   uploadMaterial,
 } from './api'
+import PagePreview from './PagePreview'
 import PolicyWorkspace from './PolicyWorkspace'
 import ReviewWorkspace from './ReviewWorkspace'
 import type {
@@ -136,9 +135,6 @@ export default function App() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [pageNumber, setPageNumber] = useState(1)
-  const [pageText, setPageText] = useState<string | null>(null)
-  const [previewError, setPreviewError] = useState<string | null>(null)
-  const [previewLoading, setPreviewLoading] = useState(false)
   const [highlight, setHighlight] = useState<{
     materialId: string
     pageNumber: number
@@ -249,8 +245,6 @@ export default function App() {
     setMaterialsError(null)
     setSelectedId(null)
     setPageNumber(1)
-    setPageText(null)
-    setPreviewError(null)
     setUploadError(null)
     setUploadNotice(null)
     setUploadFiles(null)
@@ -294,65 +288,6 @@ export default function App() {
     () => (selectedMaterial?.status === 'READY' ? selectedMaterial : null),
     [selectedMaterial],
   )
-
-  useEffect(() => {
-    if (!selectedMaterial) {
-      setPageText(null)
-      setPreviewError(null)
-      setPreviewLoading(false)
-      return
-    }
-
-    if (!previewMaterial) {
-      setPageText(null)
-      setPreviewError(
-        selectedMaterial.status === 'FAILED'
-          ? selectedMaterial.error_summary || '材料解析失败'
-          : '材料仍在处理中，请稍后刷新。',
-      )
-      setPreviewLoading(false)
-      return
-    }
-
-    const total = previewMaterial.page_count ?? 0
-    if (total < 1) {
-      setPageText(null)
-      setPreviewError('材料没有可预览的页面')
-      setPreviewLoading(false)
-      return
-    }
-
-    const safePage = Math.min(Math.max(pageNumber, 1), total)
-    if (safePage !== pageNumber) {
-      setPageNumber(safePage)
-      return
-    }
-
-    let cancelled = false
-    setPreviewLoading(true)
-    setPreviewError(null)
-    void getPageText(previewMaterial.id, safePage)
-      .then((result) => {
-        if (!cancelled) {
-          setPageText(result.text)
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setPageText(null)
-          setPreviewError(error instanceof Error ? error.message : '读取页面文本失败')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setPreviewLoading(false)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [selectedMaterial, previewMaterial, pageNumber])
 
   const canSubmit = useMemo(() => name.trim().length > 0 && !creating, [name, creating])
   const canUpload = useMemo(
@@ -488,7 +423,6 @@ export default function App() {
     }
   }
 
-  const totalPages = previewMaterial?.page_count ?? 0
   const finding = fundingReview?.finding ?? null
   const reviewStatus = fundingReview?.status ?? null
   const boundRules = fundingReview?.bound_rules ?? []
@@ -761,7 +695,17 @@ export default function App() {
                               <dl>
                                 <div>
                                   <dt>字段</dt>
-                                  <dd>{sideLabel(side, '申请经费')}</dd>
+                                  <dd>
+                                    {sideLabel(
+                                      side,
+                                      side?.field_kind === 'total_funding' ? '项目总经费' : '申请经费',
+                                    )}
+                                    {side?.field_kind === 'total_funding' ? (
+                                      <span className="funding-kind total">项目总经费</span>
+                                    ) : side?.field_kind === 'application_funding' ? (
+                                      <span className="funding-kind application">申请经费</span>
+                                    ) : null}
+                                  </dd>
                                 </div>
                                 <div>
                                   <dt>原始值</dt>
@@ -972,66 +916,21 @@ export default function App() {
                         : '材料仍在处理中，请稍后刷新。'}
                     </p>
                   ) : (
-                    <div className="preview-panel">
-                      <div className="preview-toolbar">
-                        <button
-                          type="button"
-                          className="ghost-btn"
-                          disabled={pageNumber <= 1 || previewLoading}
-                          onClick={() => setPageNumber((prev) => Math.max(1, prev - 1))}
-                        >
-                          上一页
-                        </button>
-                        <span className="page-indicator">
-                          第 {pageNumber} 页 / 共 {totalPages} 页
-                        </span>
-                        <button
-                          type="button"
-                          className="ghost-btn"
-                          disabled={pageNumber >= totalPages || previewLoading}
-                          onClick={() => setPageNumber((prev) => Math.min(totalPages, prev + 1))}
-                        >
-                          下一页
-                        </button>
-                      </div>
-
-                      {previewError ? <p className="msg error" role="alert">{previewError}</p> : null}
-
-                      <div className="preview-image-wrap">
-                        <div className="preview-image-frame">
-                          <img
-                            key={`${previewMaterial.id}-${pageNumber}`}
-                            src={pageImageUrl(previewMaterial.id, pageNumber)}
-                            alt={`${previewMaterial.original_filename} 第 ${pageNumber} 页`}
-                            className="preview-image"
-                          />
-                          {highlight &&
-                          highlight.materialId === previewMaterial.id &&
-                          highlight.pageNumber === pageNumber &&
-                          highlight.bbox.page_width > 0 &&
-                          highlight.bbox.page_height > 0 ? (
-                            <div
-                              className="evidence-highlight"
-                              style={{
-                                left: `${(highlight.bbox.x0 / highlight.bbox.page_width) * 100}%`,
-                                top: `${(highlight.bbox.y0 / highlight.bbox.page_height) * 100}%`,
-                                width: `${((highlight.bbox.x1 - highlight.bbox.x0) / highlight.bbox.page_width) * 100}%`,
-                                height: `${((highlight.bbox.y1 - highlight.bbox.y0) / highlight.bbox.page_height) * 100}%`,
-                              }}
-                              data-testid="evidence-highlight"
-                            />
-                          ) : null}
-                        </div>
-                      </div>
-
-                      <div className="preview-text">
-                        <div className="preview-text-head">本页原生文本</div>
-                        {previewLoading ? <p className="muted">正在读取文本…</p> : null}
-                        {!previewLoading && pageText != null ? (
-                          <pre>{pageText || '（本页无原生文本）'}</pre>
-                        ) : null}
-                      </div>
-                    </div>
+                    <PagePreview
+                      key={previewMaterial.id}
+                      materialId={previewMaterial.id}
+                      filename={previewMaterial.original_filename}
+                      pageNumber={pageNumber}
+                      pageCount={previewMaterial.page_count}
+                      bbox={
+                        highlight &&
+                        highlight.materialId === previewMaterial.id &&
+                        highlight.pageNumber === pageNumber
+                          ? highlight.bbox
+                          : null
+                      }
+                      onPageChange={setPageNumber}
+                    />
                   )}
                 </div>
               </>
