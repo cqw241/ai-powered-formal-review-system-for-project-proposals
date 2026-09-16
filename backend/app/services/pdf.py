@@ -106,9 +106,11 @@ def clamp_render_zoom(page_width: float, page_height: float, zoom: float) -> flo
     if area * zoom * zoom <= max_pixels:
         return zoom
 
-    # Hard cap wins over MIN_RENDER_ZOOM when the page is extremely large.
+    # Refuse before get_pixmap when even the theoretical safe zoom is unusable.
     limited = (max_pixels / area) ** 0.5
-    return max(limited, _ABS_MIN_ZOOM)
+    if limited < _ABS_MIN_ZOOM:
+        raise PdfError("页面尺寸过大，无法安全渲染")
+    return limited
 
 
 def _ensure_page_in_range(doc: pymupdf.Document, page_number: int) -> None:
