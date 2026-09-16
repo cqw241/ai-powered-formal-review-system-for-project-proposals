@@ -1,6 +1,6 @@
 # 规证AI
 
-高校项目申报材料形式审查辅助应用。当前分支实现 **B06 审查工作台**：在 B01–B05 之上，可在项目中选择已启用规则并发起审查任务；工作台显示运行状态与逐项结果，刷新后仍可查看。
+高校项目申报材料形式审查辅助应用。当前分支实现 **B07 身份一致性核对**：在 B01–B06 与 W3 公共执行契约之上，提供 RULE-002/003 领域执行器（项目名称、负责人跨文件核对）。工作台接入由 W3 集成负责人完成。
 
 > 本版本仅供本地开发。未实现登录与项目权限，**不要当作可安全公开部署的版本**。
 
@@ -29,11 +29,14 @@ backend/
     services/money.py
     services/funding_extract.py
     services/funding_review.py
+    services/identity_extract.py
+    services/identity_review.py
     services/policy_extract.py
     services/policy_storage.py
     services/rules.py
     services/reviews.py
     services/pdf.py
+    review_contract.py      # W3 执行器契约
     llm/                # 云端图像调用（文本不足时可选回退）
   fixtures/pdfs/        # A1/A2/A3、A2_320000、POL 申报指南
   tests/
@@ -47,6 +50,8 @@ docs/competition-review/
   B04_实现与验收记录.md
   B05_实现与验收记录.md
   B06_实现与验收记录.md
+  B07_实现与验收记录.md
+  W3_并行开发契约.md
 .env.example
 ```
 
@@ -225,13 +230,21 @@ cd frontend
 npm run build
 ```
 
-## B07 接续入口
+## B07 身份一致性（RULE-002/003）
 
-- 审查任务：`POST/GET /api/projects/{id}/reviews`
-- 逐项状态：已完成 / 待确认 / 失败 / 未执行
-- 已启用规则：`GET /api/rules`
+领域执行器：`execute_identity_rule(db, context) -> RuleExecutionResult`。
 
-B07 再做项目名称与负责人跨文件核对（RULE-002/003）；**不要**在本分支提前实现。
+| 规则 | 行为 |
+|---|---|
+| RULE-002 | 三类材料项目名称提取、Unicode 空白归一（含 CJK 换行空格），规范化后比较 |
+| RULE-003 | 三类材料负责人姓名提取与冲突判断 |
+
+- PASS：三处可靠且规范化后一致（承诺书换行标题与申报书一致）
+- FAIL：至少两处可靠证据规范化后不同（如 PKG-B 承诺书缺「认知负荷与」、预算表「林书彦」）
+- NEED_HUMAN_REVIEW：缺就绪材料、标题扫描模糊、手写姓名无法稳定识别；**不把「没找到」当 FAIL**
+- 证据：`ReviewEvidence`（材料、字段、原文、规范化值、页码、摘录、bbox）
+
+本分支不修改 `services/reviews.py` / 工作台；接入与一次审查联调由 W3 集成负责人完成。
 
 ## 验收记录
 
@@ -241,6 +254,7 @@ B07 再做项目名称与负责人跨文件核对（RULE-002/003）；**不要**
 - [B04 实现与验收记录](docs/competition-review/B04_实现与验收记录.md)
 - [B05 实现与验收记录](docs/competition-review/B05_实现与验收记录.md)
 - [B06 实现与验收记录](docs/competition-review/B06_实现与验收记录.md)
+- [B07 实现与验收记录](docs/competition-review/B07_实现与验收记录.md)
 
 ## 可选：安装环境排障
 
