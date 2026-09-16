@@ -11,6 +11,7 @@ from app.api.funding import router as funding_router
 from app.api.materials import router as materials_router
 from app.api.policies import router as policies_router
 from app.api.projects import router as projects_router
+from app.api.reviews import router as reviews_router
 from app.api.rules import router as rules_router
 from app.config import get_settings
 from app.db import init_db
@@ -27,8 +28,8 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title="规证AI",
-        description="高校项目申报材料形式审查 — B05 规则编辑、启用与版本绑定",
-        version="0.5.0",
+        description="高校项目申报材料形式审查 — B06 选择规则、发起任务与审查工作台",
+        version="0.6.0",
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     app.include_router(funding_router)
     app.include_router(policies_router)
     app.include_router(rules_router)
+    app.include_router(reviews_router)
 
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:

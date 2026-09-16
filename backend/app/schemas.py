@@ -6,7 +6,14 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
-from app.models import FundingReviewStatus, MaterialCategory, MaterialStatus, PolicyStatus
+from app.models import (
+    FundingReviewStatus,
+    MaterialCategory,
+    MaterialStatus,
+    PolicyStatus,
+    ReviewItemStatus,
+    ReviewTaskStatus,
+)
 
 
 class ProjectCreate(BaseModel):
@@ -371,3 +378,44 @@ class PolicyPageTextResponse(BaseModel):
     page_number: int
     page_count: int
     text: str
+
+
+class ReviewTaskCreate(BaseModel):
+    """Selected enabled rules from GET /api/rules. RULE-007 is always included."""
+
+    rule_ids: list[str] = Field(default_factory=list)
+
+
+class ReviewItemRead(BaseModel):
+    id: str
+    rule_code: str
+    source_rule_id: str | None
+    name: str
+    status: ReviewItemStatus
+    check_status: FundingReviewStatus | None = None
+    summary: str
+    version_id: str | None = None
+    version_number: int | None = None
+    snapshot: BoundRuleSnapshot | None = None
+    funding_review_id: str | None = None
+    sort_order: int
+
+
+class ReviewTaskRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    project_id: str
+    status: ReviewTaskStatus
+    created_at: datetime
+    updated_at: datetime
+    items: list[ReviewItemRead] = Field(default_factory=list)
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def ensure_utc(cls, value: datetime) -> datetime:
+        return _ensure_utc(value)
+
+    @field_serializer("created_at", "updated_at")
+    def serialize_timestamps(self, value: datetime) -> str:
+        return _serialize_utc(value)

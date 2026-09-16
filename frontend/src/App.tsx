@@ -12,6 +12,7 @@ import {
   uploadMaterial,
 } from './api'
 import PolicyWorkspace from './PolicyWorkspace'
+import ReviewWorkspace from './ReviewWorkspace'
 import type {
   BoundRule,
   EvidenceBBox,
@@ -497,7 +498,7 @@ export default function App() {
           <h1>规证AI</h1>
         </div>
         <p className="header-note">
-          本阶段支持项目材料上传预览、申请经费核对，以及政策候选启为规则、版本记录与审查绑定。
+          本阶段支持项目材料上传预览、申请经费核对、规则启用，以及在项目中选择规则发起审查任务。
         </p>
         <nav className="top-nav" aria-label="主导航">
           <button
@@ -632,11 +633,17 @@ export default function App() {
                         <span className="status-chip">尚未审查</span>
                       )}
                       <span className="muted inline-note">
-                        RULE-007 核对申请经费；已启用的 RULE-005 只绑定展示，不按学科类别裁决。
+                        工作台发起审查；下方「开始核对」仍可单独跑 RULE-007。RULE-005 本阶段不按学科类别裁决。
                       </span>
                     </dd>
                   </div>
                 </dl>
+
+                <ReviewWorkspace
+                  key={detail.id}
+                  projectId={detail.id}
+                  onTaskCreated={() => void loadFundingReview(detail.id)}
+                />
 
                 <div className="funding-section">
                   <div className="panel-head subhead">

@@ -402,10 +402,114 @@ button:disabled {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
 }
 
-.funding-section {
+.funding-section,
+.review-workspace {
   margin-top: 1.5rem;
   padding-top: 1.25rem;
   border-top: 1px solid #e6edf6;
+}
+
+.rule-picker {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 0 0.9rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid #e5ecf5;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.rule-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.rule-option input {
+  margin-top: 0.2rem;
+}
+
+.rule-option.locked {
+  color: #243757;
+}
+
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.review-item-list {
+  list-style: none;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.review-item {
+  padding: 0.85rem 0.95rem;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  background: #fff;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.review-item .candidate-head {
+  justify-content: flex-start;
+}
+
+.review-item p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.status-item-completed,
+.status-task-completed {
+  background: #e7f7ee;
+  color: #0f6b3d;
+}
+
+.status-item-pending_confirmation,
+.status-task-running {
+  background: #fff6df;
+  color: #8a5a00;
+}
+
+.status-item-failed {
+  background: #fdecec;
+  color: #a12020;
+}
+
+.status-item-not_executed,
+.status-task-idle {
+  background: #eef2f7;
+  color: #45566d;
+}
+
+.review-item.status-item-completed {
+  border-color: #9ed0b2;
+  background: linear-gradient(180deg, #f3fbf6 0%, #fff 42%);
+}
+
+.review-item.status-item-pending_confirmation {
+  border-color: #e6c37a;
+  background: linear-gradient(180deg, #fff9eb 0%, #fff 42%);
+}
+
+.review-item.status-item-failed {
+  border-color: #efb4b4;
+  background: linear-gradient(180deg, #fff5f5 0%, #fff 42%);
+}
+
+.review-item.status-item-not_executed {
+  border-color: #d3dce8;
+  background: linear-gradient(180deg, #f7f9fc 0%, #fff 42%);
 }
 
 .funding-hint {
