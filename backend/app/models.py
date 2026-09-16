@@ -32,6 +32,7 @@ class FundingReviewStatus(str, Enum):
     PASS = "PASS"
     FAIL = "FAIL"
     NEED_HUMAN_REVIEW = "NEED_HUMAN_REVIEW"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
     SYSTEM_ERROR = "SYSTEM_ERROR"
 
 

@@ -382,7 +382,7 @@ class PolicyPageTextResponse(BaseModel):
 
 
 class ReviewTaskCreate(BaseModel):
-    """Selected enabled rules from GET /api/rules. Built-in W3 rules are always included."""
+    """Selected enabled rules from GET /api/rules. Built-in W3/W4 rules are always included."""
 
     rule_ids: list[str] = Field(default_factory=list)
 
