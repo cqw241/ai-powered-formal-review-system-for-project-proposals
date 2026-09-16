@@ -455,7 +455,7 @@ export default function PolicyWorkspace({ onBack }: Props) {
       </div>
 
       <p className="muted funding-hint">
-        上传模拟申报指南 PDF 后可预览原文并编辑候选草稿。经费上限候选可启为 RULE-005；编辑已启用规则会新增版本，停用后不再进入新审查。
+        上传模拟申报指南 PDF 后可预览原文并编辑候选草稿。经费上限候选可启为 RULE-005（自然科学类与人文社会科学类会各成一条）。启用后改上限须走「编辑已启用规则」追加版本；只改候选草稿不会进入新审查。停用后不再进入新审查。
       </p>
 
       <form className="upload-form" onSubmit={(event) => void handleUpload(event)}>
@@ -705,7 +705,7 @@ export default function PolicyWorkspace({ onBack }: Props) {
             >
               <div className="panel-head subhead">
                 <h3>编辑候选</h3>
-                <span className="muted">修改后保存，刷新页面仍保留</span>
+                <span className="muted">草稿修改刷新后仍保留；不会写入已启用规则，新审查也不使用</span>
               </div>
               <div className="candidate-edit-grid">
                 <label>

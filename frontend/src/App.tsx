@@ -650,7 +650,7 @@ export default function App() {
                     </button>
                   </div>
                   <p className="muted funding-hint">
-                    提取申报书「申请经费」与预算表「申请总额」，统一换算为元后比较。每次核对会快照当时已启用规则版本；停用后新审查不再包含，旧结果仍显示当时版本。
+                    提取申报书「申请经费」与预算表「申请总额」，统一换算为元后比较。已启用 RULE-005 只写入并展示 bound_rules 快照，本阶段不按上限判 PASS/FAIL。停用后新审查不再包含，旧结果仍显示当时版本。
                   </p>
                   {fundingHistory.length > 1 ? (
                     <div className="review-history" data-testid="funding-review-history">

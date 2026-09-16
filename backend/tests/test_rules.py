@@ -73,6 +73,44 @@ def test_enable_funding_cap_creates_rule_version_and_persists(client):
     assert attached["rule"]["current_version_number"] == 1
 
 
+def test_enable_unknown_policy_404(client):
+    response = _enable(
+        client,
+        "00000000-0000-0000-0000-000000000000",
+        "00000000-0000-0000-0000-000000000000",
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "政策不存在"
+
+
+def test_two_funding_caps_become_two_rule_005(client):
+    uploaded = _upload_policy(client).json()
+    natural = _enable(client, uploaded["id"], _funding_cap(uploaded, "自然科学类")["id"]).json()
+    humanities = _enable(
+        client, uploaded["id"], _funding_cap(uploaded, "人文社会科学类")["id"]
+    ).json()
+    assert natural["id"] != humanities["id"]
+    assert natural["rule_code"] == "RULE-005"
+    assert humanities["rule_code"] == "RULE-005"
+    assert natural["current_version"]["category"] == "自然科学类"
+    assert humanities["current_version"]["category"] == "人文社会科学类"
+
+
+def test_editing_candidate_draft_does_not_change_enabled_rule(client):
+    uploaded = _upload_policy(client).json()
+    candidate = _funding_cap(uploaded, "自然科学类")
+    enabled = _enable(client, uploaded["id"], candidate["id"]).json()
+    patched = client.patch(
+        f"/api/policies/{uploaded['id']}/candidates/{candidate['id']}",
+        json={"amount_raw": "10万元"},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["amount_yuan"] == 100_000
+    rule = client.get(f"/api/rules/{enabled['id']}").json()
+    assert rule["current_version_number"] == 1
+    assert rule["current_version"]["amount_yuan"] == 300_000
+
+
 def test_enable_clause_candidate_rejected(client):
     uploaded = _upload_policy(client).json()
     clause = next(item for item in uploaded["candidates"] if item["kind"] != "FUNDING_CAP")

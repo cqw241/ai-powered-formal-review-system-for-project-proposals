@@ -129,19 +129,6 @@ export async function listFundingReviews(projectId: string): Promise<FundingRevi
   return response.json() as Promise<FundingReview[]>
 }
 
-export async function getFundingReviewById(
-  projectId: string,
-  reviewId: string,
-): Promise<FundingReview> {
-  const response = await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/funding-reviews/${encodeURIComponent(reviewId)}`,
-  )
-  if (!response.ok) {
-    throw new Error(await parseError(response))
-  }
-  return response.json() as Promise<FundingReview>
-}
-
 export async function listPolicies(): Promise<PolicySummary[]> {
   const response = await fetch('/api/policies')
   if (!response.ok) {

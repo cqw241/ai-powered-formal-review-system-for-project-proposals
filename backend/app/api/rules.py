@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import PolicyCandidate
+from app.models import PolicyCandidate, PolicyDocument
 from app.schemas import RuleRead, RuleUpdate
 from app.services import rules as rule_service
 
@@ -39,9 +39,9 @@ def enable_candidate_rule(
     candidate_id: str,
     db: Session = Depends(get_db),
 ) -> RuleRead:
-    from app.api.policies import _get_policy_or_404
-
-    policy = _get_policy_or_404(db, policy_id)
+    policy = db.get(PolicyDocument, policy_id)
+    if policy is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="政策不存在")
     candidate = db.get(PolicyCandidate, candidate_id)
     if candidate is None or candidate.policy_id != policy_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="候选要求不存在")
