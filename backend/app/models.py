@@ -1,4 +1,4 @@
-"""ORM models for projects, PDF materials, funding reviews, policies, and rules."""
+"""ORM models for projects, PDF materials, funding reviews, policies, rules, and review tasks."""
 
 from __future__ import annotations
 
@@ -35,6 +35,19 @@ class FundingReviewStatus(str, Enum):
     SYSTEM_ERROR = "SYSTEM_ERROR"
 
 
+class ReviewTaskStatus(str, Enum):
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+
+
+class ReviewItemStatus(str, Enum):
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    PENDING_CONFIRMATION = "PENDING_CONFIRMATION"
+    FAILED = "FAILED"
+    NOT_EXECUTED = "NOT_EXECUTED"
+
+
 class PolicyStatus(str, Enum):
     PROCESSING = "PROCESSING"
     READY = "READY"
@@ -57,6 +70,10 @@ class Project(Base):
         cascade="all, delete-orphan",
     )
     funding_reviews: Mapped[list[FundingReview]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    review_tasks: Mapped[list[ReviewTask]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
     )
@@ -247,3 +264,78 @@ class RuleVersion(Base):
     )
 
     rule: Mapped[Rule] = relationship(back_populates="versions")
+
+
+class ReviewTask(Base):
+    """Persisted review run: RULE-007 plus user-selected enabled rules."""
+
+    __tablename__ = "review_tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=ReviewTaskStatus.RUNNING.value)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    project: Mapped[Project] = relationship(back_populates="review_tasks")
+    items: Mapped[list[ReviewItem]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="ReviewItem.sort_order",
+    )
+
+
+class ReviewItem(Base):
+    """One rule slot in a review task. RULE-007 is built-in, not a rules-table row."""
+
+    __tablename__ = "review_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    task_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("review_tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    rule_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_rule_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("rules.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    version_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    check_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    snapshot_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    funding_review_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("funding_reviews.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    task: Mapped[ReviewTask] = relationship(back_populates="items")

@@ -10,6 +10,7 @@ import type {
   PolicyPageText,
   PolicySummary,
   Project,
+  ReviewTask,
   Rule,
   RuleUpdate,
 } from './types'
@@ -228,4 +229,32 @@ export async function updateRule(ruleId: string, patch: RuleUpdate): Promise<Rul
     throw new Error(await parseError(response))
   }
   return response.json() as Promise<Rule>
+}
+
+export async function listRules(): Promise<Rule[]> {
+  const response = await fetch('/api/rules')
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<Rule[]>
+}
+
+export async function startReview(projectId: string, ruleIds: string[]): Promise<ReviewTask> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/reviews`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rule_ids: ruleIds }),
+  })
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<ReviewTask>
+}
+
+export async function listReviews(projectId: string): Promise<ReviewTask[]> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/reviews`)
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<ReviewTask[]>
 }

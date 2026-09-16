@@ -1,6 +1,6 @@
 # 规证AI
 
-高校项目申报材料形式审查辅助应用。当前分支实现 **B05 规则编辑**：在 B01–B04 之上，可将经费上限候选启为 RULE-005，编辑生成新版本，停用后退出新审查；每次经费核对绑定当时已启用规则版本。
+高校项目申报材料形式审查辅助应用。当前分支实现 **B06 审查工作台**：在 B01–B05 之上，可在项目中选择已启用规则并发起审查任务；工作台显示运行状态与逐项结果，刷新后仍可查看。
 
 > 本版本仅供本地开发。未实现登录与项目权限，**不要当作可安全公开部署的版本**。
 
@@ -25,24 +25,28 @@ backend/
     api/funding.py      # 申请经费核对
     api/policies.py     # 政策上传 / 预览 / 候选要求
     api/rules.py        # 规则启用 / 停用 / 版本编辑
+    api/reviews.py      # 审查任务
     services/money.py
     services/funding_extract.py
     services/funding_review.py
     services/policy_extract.py
     services/policy_storage.py
     services/rules.py
+    services/reviews.py
     services/pdf.py
     llm/                # 云端图像调用（文本不足时可选回退）
   fixtures/pdfs/        # A1/A2/A3、A2_320000、POL 申报指南
   tests/
 frontend/
   src/PolicyWorkspace.tsx
+  src/ReviewWorkspace.tsx
 docs/competition-review/
   B01_实现与验收记录.md
   B02_实现与验收记录.md
   B03_实现与验收记录.md
   B04_实现与验收记录.md
   B05_实现与验收记录.md
+  B06_实现与验收记录.md
 .env.example
 ```
 
@@ -102,7 +106,7 @@ npm run dev
 
 浏览器打开 Vite 提示的地址（默认 `http://127.0.0.1:5173`）。前端通过 Vite 代理访问 `/api`。
 
-首次启动会在 `backend/data/app.db` 创建表（`create_all` 只补缺失表），并在 `MATERIALS_DIR` / `POLICIES_DIR` 保存上传文件；**重启不会删除已有项目、材料、经费核对结果、政策候选与规则版本**。
+首次启动会在 `backend/data/app.db` 创建表（`create_all` 只补缺失表），并在 `MATERIALS_DIR` / `POLICIES_DIR` 保存上传文件；**重启不会删除已有项目、材料、经费核对结果、政策候选、规则版本与审查任务**。
 
 ### 数据库初始化
 
@@ -175,13 +179,24 @@ uv run python -c "from app.db import init_db; init_db(); print('ok')"
 
 启用后改上限必须走 `PATCH /api/rules/{id}`（「编辑已启用规则」，追加版本）。只改候选草稿，新审查不会用到。自然科学类与人文社会科学类会各生成一条 `rule_code=RULE-005` 的规则（B05 允许；B08 按类别选用对应那一条）。
 
-## B05 使用说明
+### 审查工作台（B06）
 
-1. 顶部导航进入「政策与候选要求」，上传模拟申报指南 PDF。
-2. 在经费上限候选旁点击「启用为规则」。启用后改上限须用「编辑已启用规则」保存为新版本；只改候选草稿不会进入新审查。
-3. 刷新页面后启用状态与版本号仍在。
-4. 打开项目，上传申报书与预算表，点击「开始核对」：RULE-007 结果旁展示本次 `bound_rules` 快照（类别/上限版本），本阶段不按上限判 PASS/FAIL。
-5. 停用规则后再核对：新结果不含该规则；点开历史核对比对，旧结果仍含当时版本。
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `POST` | `/api/projects/{project_id}/reviews` | 发起审查任务；body: `{ "rule_ids": ["..."] }` |
+| `GET` | `/api/projects/{project_id}/reviews` | 任务列表（新到旧，含逐项结果） |
+| `GET` | `/api/projects/{project_id}/reviews/{task_id}` | 指定任务 |
+
+条目 = 内置 RULE-007 + 勾选的已启用规则。发起时先落库「运行中」任务与逐项占位，刷新可续看；结束后再写终态。RULE-007 复用 `POST /api/projects/{id}/funding-review`，不写入 `rules` 表。PASS/FAIL → 已完成（带核对结论）；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。其它已启用规则本阶段标「未执行」并绑定当时版本快照，**不按学科类别上限判 PASS/FAIL**。无已启用规则时仍可只跑 RULE-007。现有「开始核对」入口保留。POST 需要 JSON body。
+
+## B06 使用说明
+
+1. 顶部导航进入「政策与候选要求」，上传模拟申报指南 PDF，将经费上限候选启为规则。
+2. 打开项目，上传申报书与预算表。
+3. 在「审查工作台」勾选已启用规则（RULE-007 始终纳入），点击「开始审查」。
+4. 工作台显示任务运行状态与逐项结果：RULE-007 为已完成/待确认/失败（带核对结论）；勾选但无执行器的规则为未执行，并显示当时版本快照。
+5. 刷新页面后再打开该项目，任务与逐项状态仍在。
+6. 下方「开始核对」仍可单独跑 RULE-007（B03/B05 入口保留）。
 
 样例政策：
 
@@ -210,13 +225,13 @@ cd frontend
 npm run build
 ```
 
-## B06 接续入口
+## B07 接续入口
 
+- 审查任务：`POST/GET /api/projects/{id}/reviews`
+- 逐项状态：已完成 / 待确认 / 失败 / 未执行
 - 已启用规则：`GET /api/rules`
-- 经费核对绑定快照：`POST/GET /api/projects/{id}/funding-review` 的 `bound_rules`
-- 历史核对：`GET /api/projects/{id}/funding-reviews`
 
-B06 再做选择规则、发起任务与审查工作台；**不要**在本分支提前实现。
+B07 再做项目名称与负责人跨文件核对（RULE-002/003）；**不要**在本分支提前实现。
 
 ## 验收记录
 
@@ -225,6 +240,7 @@ B06 再做选择规则、发起任务与审查工作台；**不要**在本分支
 - [B03 实现与验收记录](docs/competition-review/B03_实现与验收记录.md)
 - [B04 实现与验收记录](docs/competition-review/B04_实现与验收记录.md)
 - [B05 实现与验收记录](docs/competition-review/B05_实现与验收记录.md)
+- [B06 实现与验收记录](docs/competition-review/B06_实现与验收记录.md)
 
 ## 可选：安装环境排障
 

@@ -200,3 +200,36 @@ export type PolicyPageText = {
   page_count: number
   text: string
 }
+
+export type ReviewTaskStatus = 'RUNNING' | 'COMPLETED'
+
+export type ReviewItemStatus =
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'PENDING_CONFIRMATION'
+  | 'FAILED'
+  | 'NOT_EXECUTED'
+
+export type ReviewItem = {
+  id: string
+  rule_code: string
+  source_rule_id: string | null
+  name: string
+  status: ReviewItemStatus
+  check_status: ReviewStatus | null
+  summary: string
+  version_id: string | null
+  version_number: number | null
+  snapshot: BoundRule | null
+  funding_review_id: string | null
+  sort_order: number
+}
+
+export type ReviewTask = {
+  id: string
+  project_id: string
+  status: ReviewTaskStatus
+  created_at: string
+  updated_at: string
+  items: ReviewItem[]
+}
