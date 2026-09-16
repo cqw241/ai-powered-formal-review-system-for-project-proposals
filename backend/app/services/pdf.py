@@ -9,6 +9,8 @@ import pymupdf
 # Cap rendered bitmap size to avoid huge memory spikes on oversized pages.
 MAX_RENDER_PIXELS = 16_777_216  # 4096 * 4096
 MIN_RENDER_ZOOM = 0.25
+_ABS_MIN_ZOOM = 1e-3
+_MAX_RENDER_ATTEMPTS = 8
 
 
 class PdfError(Exception):
@@ -54,21 +56,44 @@ def get_page_text(path: Path, page_number: int) -> str:
 
 
 def get_page_png(path: Path, page_number: int, *, zoom: float = 1.5) -> bytes:
-    """Render a 1-based page to PNG bytes, clamping zoom for oversized pages."""
+    """Render a 1-based page to PNG bytes.
+
+    Zoom is first estimated from page rect, then verified against the actual
+    pixmap size. If the rendered pixel count still exceeds MAX_RENDER_PIXELS,
+    zoom is reduced and the page is re-rendered.
+    """
     doc = open_document(path)
     try:
         _ensure_page_in_range(doc, page_number)
         page = doc.load_page(page_number - 1)
         effective_zoom = clamp_render_zoom(page.rect.width, page.rect.height, zoom)
-        matrix = pymupdf.Matrix(effective_zoom, effective_zoom)
-        pixmap = page.get_pixmap(matrix=matrix, alpha=False)
-        return pixmap.tobytes("png")
+
+        last_pixels = 0
+        for _ in range(_MAX_RENDER_ATTEMPTS):
+            matrix = pymupdf.Matrix(effective_zoom, effective_zoom)
+            pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+            last_pixels = int(pixmap.width) * int(pixmap.height)
+            if last_pixels <= MAX_RENDER_PIXELS:
+                return pixmap.tobytes("png")
+
+            # Actual raster exceeded the estimate (rounding / media box). Shrink and retry.
+            shrink = (MAX_RENDER_PIXELS / last_pixels) ** 0.5
+            next_zoom = effective_zoom * shrink * 0.98
+            if next_zoom >= effective_zoom:
+                next_zoom = effective_zoom * 0.9
+            effective_zoom = max(next_zoom, _ABS_MIN_ZOOM)
+            if effective_zoom <= _ABS_MIN_ZOOM + 1e-12:
+                break
+
+        raise PdfError(
+            f"页面过大，无法在 {MAX_RENDER_PIXELS} 像素上限内渲染（最近一次 {last_pixels} 像素）"
+        )
     finally:
         doc.close()
 
 
 def clamp_render_zoom(page_width: float, page_height: float, zoom: float) -> float:
-    """Return zoom so that width*height*zoom^2 does not exceed MAX_RENDER_PIXELS."""
+    """Estimate zoom so that width*height*zoom^2 does not exceed MAX_RENDER_PIXELS."""
     if zoom <= 0:
         zoom = MIN_RENDER_ZOOM
     width = abs(float(page_width))
@@ -83,7 +108,7 @@ def clamp_render_zoom(page_width: float, page_height: float, zoom: float) -> flo
 
     # Hard cap wins over MIN_RENDER_ZOOM when the page is extremely large.
     limited = (max_pixels / area) ** 0.5
-    return max(limited, 1e-3)
+    return max(limited, _ABS_MIN_ZOOM)
 
 
 def _ensure_page_in_range(doc: pymupdf.Document, page_number: int) -> None:
