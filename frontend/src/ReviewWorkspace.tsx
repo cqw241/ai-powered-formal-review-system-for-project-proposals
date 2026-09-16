@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { listReviews, listRules, startReview } from './api'
-import type { ReviewItem, ReviewItemStatus, ReviewTask, ReviewTaskStatus, Rule } from './types'
+import type {
+  EvidenceBBox,
+  ReviewEvidence,
+  ReviewItem,
+  ReviewItemStatus,
+  ReviewTask,
+  ReviewTaskStatus,
+  Rule,
+} from './types'
 
 const TASK_STATUS_LABEL: Record<ReviewTaskStatus, string> = {
   RUNNING: '运行中',
@@ -16,11 +24,20 @@ const ITEM_STATUS_LABEL: Record<ReviewItemStatus, string> = {
 }
 
 const CHECK_STATUS_LABEL: Record<string, string> = {
-  PASS: '一致',
-  FAIL: '不一致',
+  PASS: '通过',
+  FAIL: '不通过',
   NEED_HUMAN_REVIEW: '待人工确认',
   SYSTEM_ERROR: '系统错误',
 }
+
+const BUILTIN_RULES: Array<{ code: string; name: string }> = [
+  { code: 'RULE-002', name: '项目名称跨文件一致' },
+  { code: 'RULE-003', name: '项目负责人跨文件一致' },
+  { code: 'RULE-004', name: '项目周期窗口与时长' },
+  { code: 'RULE-006', name: '预算科目合计一致' },
+  { code: 'RULE-007', name: '申请经费跨文件一致性' },
+  { code: 'RULE-010', name: '承诺书签署日期' },
+]
 
 function formatDateTime(value: string): string {
   const date = new Date(value)
@@ -69,12 +86,56 @@ function itemKey(item: ReviewItem): string {
   return item.source_rule_id ?? item.rule_code
 }
 
+function evidenceLabel(evidence: ReviewEvidence): string {
+  const field = evidence.field_name || '原文'
+  const file = evidence.original_filename ? ` · ${evidence.original_filename}` : ''
+  const page = evidence.page_number ? ` · 第 ${evidence.page_number} 页` : ''
+  return `${field}${file}${page}`
+}
+
+function EvidenceRow({
+  evidence,
+  onOpen,
+}: {
+  evidence: ReviewEvidence
+  onOpen?: (target: EvidenceTarget) => void
+}) {
+  const clickable = Boolean(evidence.material_id && evidence.page_number && onOpen)
+  return (
+    <button
+      type="button"
+      className={`evidence-row${clickable ? ' clickable' : ''}`}
+      disabled={!clickable}
+      onClick={() => {
+        if (!evidence.material_id || !evidence.page_number || !onOpen) {
+          return
+        }
+        onOpen({
+          materialId: evidence.material_id,
+          pageNumber: evidence.page_number,
+          bbox: evidence.bbox,
+        })
+      }}
+    >
+      <strong>{evidenceLabel(evidence)}</strong>
+      <span>{evidence.quote || evidence.raw_value || evidence.reason || '无摘录'}</span>
+    </button>
+  )
+}
+
+export type EvidenceTarget = {
+  materialId: string
+  pageNumber: number
+  bbox: EvidenceBBox | null
+}
+
 type Props = {
   projectId: string
   onTaskCreated?: () => void
+  onOpenEvidence?: (target: EvidenceTarget) => void
 }
 
-export default function ReviewWorkspace({ projectId, onTaskCreated }: Props) {
+export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEvidence }: Props) {
   const [rules, setRules] = useState<Rule[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [tasks, setTasks] = useState<ReviewTask[]>([])
@@ -167,20 +228,21 @@ export default function ReviewWorkspace({ projectId, onTaskCreated }: Props) {
         </button>
       </div>
       <p className="muted funding-hint">
-        内置 RULE-007 始终执行。开始后先落库「运行中」与逐项占位，刷新可续看进度；完成后再写终态。「失败」只表示执行出错；金额不一致是已完成，核对结论为「不一致」。勾选但无执行器的规则为未执行（绑定当时版本，不按上限裁决）。无已启用规则时仍可只跑
-        RULE-007。
+        一次审查内置 RULE-002/003/004/006/007/010。勾选已启用的 RULE-005 按项目类别用当时版本上限。开始后先落库「运行中」，刷新可续看。「失败」只表示执行出错；规则不通过是已完成。点击证据原文可打开对应页。
       </p>
 
       <div className="rule-picker" data-testid="review-rule-picker">
-        <label className="rule-option locked">
-          <input type="checkbox" checked disabled data-testid="select-rule-RULE-007" />
-          <span>
-            <strong>RULE-007</strong> 申请经费跨文件一致性
-            <span className="muted"> · 内置，始终纳入</span>
-          </span>
-        </label>
+        {BUILTIN_RULES.map((rule) => (
+          <label key={rule.code} className="rule-option locked">
+            <input type="checkbox" checked disabled data-testid={`select-rule-${rule.code}`} />
+            <span>
+              <strong>{rule.code}</strong> {rule.name}
+              <span className="muted"> · 内置，始终纳入</span>
+            </span>
+          </label>
+        ))}
         {enabledRules.length === 0 ? (
-          <p className="muted">当前没有已启用规则，开始审查将只运行 RULE-007。</p>
+          <p className="muted">当前没有已启用 RULE-005。开始审查仍会运行内置规则。</p>
         ) : (
           enabledRules.map((rule) => {
             const version = rule.current_version
@@ -313,6 +375,15 @@ export default function ReviewWorkspace({ projectId, onTaskCreated }: Props) {
                       </dd>
                     </div>
                   </dl>
+                ) : null}
+                {item.result?.evidence?.length ? (
+                  <ul className="evidence-list">
+                    {item.result.evidence.map((evidence, index) => (
+                      <li key={`${item.id}-ev-${index}`}>
+                        <EvidenceRow evidence={evidence} onOpen={onOpenEvidence} />
+                      </li>
+                    ))}
+                  </ul>
                 ) : null}
               </li>
             ))}
