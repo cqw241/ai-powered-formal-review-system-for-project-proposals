@@ -1,6 +1,6 @@
 # 规证AI
 
-高校项目申报材料形式审查辅助应用。当前分支实现 **B06 审查工作台**：在 B01–B05 之上，可在项目中选择已启用规则并发起审查任务；工作台显示运行状态与逐项结果，刷新后仍可查看。
+高校项目申报材料形式审查辅助应用。当前分支实现 **B08 预算规则**：RULE-005 分类经费上限与 RULE-006 预算科目合计（1 元容差）的领域执行器。审查工作台接线由 W3 集成负责人完成，本分支不改 `reviews.py` / 工作台。
 
 > 本版本仅供本地开发。未实现登录与项目权限，**不要当作可安全公开部署的版本**。
 
@@ -33,7 +33,10 @@ backend/
     services/policy_storage.py
     services/rules.py
     services/reviews.py
+    services/budget_extract.py
+    services/budget_review.py
     services/pdf.py
+    review_contract.py      # W3 执行器契约
     llm/                # 云端图像调用（文本不足时可选回退）
   fixtures/pdfs/        # A1/A2/A3、A2_320000、POL 申报指南
   tests/
@@ -47,6 +50,8 @@ docs/competition-review/
   B04_实现与验收记录.md
   B05_实现与验收记录.md
   B06_实现与验收记录.md
+  B08_实现与验收记录.md
+  W3_并行开发契约.md
 .env.example
 ```
 
@@ -225,13 +230,29 @@ cd frontend
 npm run build
 ```
 
-## B07 接续入口
+## B08 预算规则（本分支）
+
+领域执行器，不改审查编排：
+
+```python
+from app.services.budget_review import execute_budget_rule
+result = execute_budget_rule(db, context)  # RULE-005 或 RULE-006
+```
+
+- RULE-005：读取申报书项目类别，用绑定快照的类别/上限比较申请经费（优先预算表申请总额）。人文社科 153000 元相对 150000 元上限为 FAIL；类别缺失为 NEED_HUMAN_REVIEW。
+- RULE-006：科目明细（不含合计行、设备拆分、分年度表）之和与申请总额比较，绝对差 ≤ 1 元通过；配套经费合并单元格等口径不清为 NEED_HUMAN_REVIEW。
+- 未知金额不当作 0。证据写入 `ReviewEvidence`。
+
+集成时按项目类别选用对应那一条 RULE-005，并调用 `persist_rule_result`。
+
+## B07 / B09 接续入口
 
 - 审查任务：`POST/GET /api/projects/{id}/reviews`
 - 逐项状态：已完成 / 待确认 / 失败 / 未执行
 - 已启用规则：`GET /api/rules`
+- 执行器契约：`backend/app/review_contract.py`
 
-B07 再做项目名称与负责人跨文件核对（RULE-002/003）；**不要**在本分支提前实现。
+B07 做项目名称与负责人跨文件核对（RULE-002/003）；B09 做日期规则（RULE-004/010）。本分支不实现这两块。
 
 ## 验收记录
 
@@ -241,6 +262,7 @@ B07 再做项目名称与负责人跨文件核对（RULE-002/003）；**不要**
 - [B04 实现与验收记录](docs/competition-review/B04_实现与验收记录.md)
 - [B05 实现与验收记录](docs/competition-review/B05_实现与验收记录.md)
 - [B06 实现与验收记录](docs/competition-review/B06_实现与验收记录.md)
+- [B08 实现与验收记录](docs/competition-review/B08_实现与验收记录.md)
 
 ## 可选：安装环境排障
 
