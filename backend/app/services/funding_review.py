@@ -23,12 +23,13 @@ from app.models import (
     MaterialCategory,
     MaterialStatus,
 )
-from app.schemas import FundingFinding, FundingReviewRead
+from app.schemas import BoundRuleSnapshot, FundingFinding, FundingReviewRead
 from app.services.funding_extract import (
     ExtractedFunding,
     extract_application_funding_from_pdf,
 )
 from app.services.money import UNIT_LABELS, difference_yuan
+from app.services.rules import snapshot_enabled_rules
 from app.services.storage import material_file_path
 
 RULE_ID = "RULE-007"
@@ -90,6 +91,7 @@ def run_funding_review(
             right=None,
             difference=None,
         )
+        payload["bound_rules"] = snapshot_enabled_rules(db, application_amount_yuan=None)
         return _persist(db, project_id, FundingReviewStatus.NEED_HUMAN_REVIEW, payload)
 
     try:
@@ -107,6 +109,7 @@ def run_funding_review(
         )
     except Exception as exc:  # noqa: BLE001 — surface as SYSTEM_ERROR finding
         payload = _error_payload(f"经费核对过程失败：{exc}")
+        payload["bound_rules"] = snapshot_enabled_rules(db, application_amount_yuan=None)
         return _persist(db, project_id, FundingReviewStatus.SYSTEM_ERROR, payload)
 
     left = SideView(
@@ -123,6 +126,7 @@ def run_funding_review(
     )
 
     status, reason, diff = _compare(left_ext, right_ext)
+    application_amount = left_ext.amount_yuan if left_ext.reliable else None
     payload = {
         "rule_id": RULE_ID,
         "check_field": CHECK_FIELD,
@@ -132,6 +136,7 @@ def run_funding_review(
         "left": left.as_dict(),
         "right": right.as_dict(),
         "compared_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "bound_rules": snapshot_enabled_rules(db, application_amount_yuan=application_amount),
     }
     return _persist(db, project_id, status, payload)
 
@@ -148,7 +153,12 @@ def get_latest_funding_review(db: Session, project_id: str) -> FundingReview | N
 
 def to_funding_review_read(review: FundingReview) -> FundingReviewRead:
     """Build API response the same way Project/Material use response models."""
-    finding = FundingFinding.model_validate(json.loads(review.payload_json))
+    payload = json.loads(review.payload_json)
+    bound_raw = payload.get("bound_rules") or []
+    finding = FundingFinding.model_validate(
+        {key: value for key, value in payload.items() if key != "bound_rules"}
+    )
+    bound_rules = [BoundRuleSnapshot.model_validate(item) for item in bound_raw]
     return FundingReviewRead(
         id=review.id,
         project_id=review.project_id,
@@ -156,7 +166,25 @@ def to_funding_review_read(review: FundingReview) -> FundingReviewRead:
         status=FundingReviewStatus(review.status),
         created_at=review.created_at,
         finding=finding,
+        bound_rules=bound_rules,
     )
+
+
+def list_funding_reviews(db: Session, project_id: str) -> list[FundingReview]:
+    statement = (
+        select(FundingReview)
+        .where(FundingReview.project_id == project_id)
+        .order_by(FundingReview.created_at.desc())
+    )
+    return list(db.scalars(statement).all())
+
+
+def get_funding_review(db: Session, project_id: str, review_id: str) -> FundingReview | None:
+    statement = select(FundingReview).where(
+        FundingReview.project_id == project_id,
+        FundingReview.id == review_id,
+    )
+    return db.scalars(statement).first()
 
 
 def _compare(

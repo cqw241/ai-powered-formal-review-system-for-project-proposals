@@ -4,6 +4,7 @@ import {
   getFundingReview,
   getPageText,
   getProject,
+  listFundingReviews,
   listMaterials,
   listProjects,
   pageImageUrl,
@@ -12,6 +13,7 @@ import {
 } from './api'
 import PolicyWorkspace from './PolicyWorkspace'
 import type {
+  BoundRule,
   EvidenceBBox,
   FundingReview,
   FundingSide,
@@ -58,6 +60,22 @@ function formatYuan(value: number | null | undefined): string {
     return '未知（非 0）'
   }
   return `${value.toLocaleString('zh-CN')} 元`
+}
+
+function comparatorLabel(value: string | null | undefined): string {
+  if (value === 'LE') {
+    return '不超过'
+  }
+  if (value === 'LT') {
+    return '小于'
+  }
+  if (value === 'EQ') {
+    return '等于'
+  }
+  if (value === 'GE') {
+    return '不少于'
+  }
+  return value || '未设'
 }
 
 function sideLabel(side: FundingSide | null, fallback: string): string {
@@ -127,6 +145,7 @@ export default function App() {
   } | null>(null)
 
   const [fundingReview, setFundingReview] = useState<FundingReview | null>(null)
+  const [fundingHistory, setFundingHistory] = useState<FundingReview[]>([])
   const [fundingLoading, setFundingLoading] = useState(false)
   const [fundingError, setFundingError] = useState<string | null>(null)
   const [fundingRunning, setFundingRunning] = useState(false)
@@ -184,9 +203,13 @@ export default function App() {
         setFundingError(null)
       }
       try {
-        const data = await getFundingReview(projectId)
+        const [data, history] = await Promise.all([
+          getFundingReview(projectId),
+          listFundingReviews(projectId),
+        ])
         if (isActiveDetail(projectId)) {
           setFundingReview(data)
+          setFundingHistory(history)
           setFundingError(null)
         }
         return data
@@ -194,6 +217,7 @@ export default function App() {
         if (isActiveDetail(projectId)) {
           setFundingError(error instanceof Error ? error.message : '加载经费核对结果失败')
           setFundingReview(null)
+          setFundingHistory([])
         }
         return null
       } finally {
@@ -232,6 +256,7 @@ export default function App() {
     setUploading(false)
     setHighlight(null)
     setFundingReview(null)
+    setFundingHistory([])
     setFundingError(null)
     setFundingLoading(false)
     setFundingRunning(false)
@@ -446,6 +471,7 @@ export default function App() {
         return
       }
       setFundingReview(result)
+      setFundingHistory((prev) => [result, ...prev.filter((item) => item.id !== result.id)])
     } catch (error) {
       if (isActiveDetail(projectId)) {
         setFundingError(error instanceof Error ? error.message : '申请经费核对失败')
@@ -460,6 +486,7 @@ export default function App() {
   const totalPages = previewMaterial?.page_count ?? 0
   const finding = fundingReview?.finding ?? null
   const reviewStatus = fundingReview?.status ?? null
+  const boundRules = fundingReview?.bound_rules ?? []
   const canRunFunding = Boolean(detail && !fundingRunning)
 
   return (
@@ -470,7 +497,7 @@ export default function App() {
           <h1>规证AI</h1>
         </div>
         <p className="header-note">
-          本阶段支持项目材料上传预览、申请经费核对，以及政策上传与候选要求提取。候选要求仍是可编辑草稿，尚未启用为规则。
+          本阶段支持项目材料上传预览、申请经费核对，以及政策候选启为规则、版本记录与审查绑定。
         </p>
         <nav className="top-nav" aria-label="主导航">
           <button
@@ -604,7 +631,9 @@ export default function App() {
                       ) : (
                         <span className="status-chip">尚未审查</span>
                       )}
-                      <span className="muted inline-note">当前仅核对申报书与预算表的申请经费。</span>
+                      <span className="muted inline-note">
+                        RULE-007 核对申请经费；已启用的 RULE-005 只绑定展示，不按学科类别裁决。
+                      </span>
                     </dd>
                   </div>
                 </dl>
@@ -621,8 +650,31 @@ export default function App() {
                     </button>
                   </div>
                   <p className="muted funding-hint">
-                    提取申报书「申请经费」与预算表「申请总额」，统一换算为元后比较；不与「项目总经费」混淆。未知值不会当作 0。
+                    提取申报书「申请经费」与预算表「申请总额」，统一换算为元后比较。已启用 RULE-005 只写入并展示 bound_rules 快照，本阶段不按上限判 PASS/FAIL。停用后新审查不再包含，旧结果仍显示当时版本。
                   </p>
+                  {fundingHistory.length > 1 ? (
+                    <div className="review-history" data-testid="funding-review-history">
+                      <span className="muted">历史核对</span>
+                      {fundingHistory.map((item, index) => {
+                        const active = item.id === fundingReview?.id
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={`ghost-btn${active ? ' active' : ''}`}
+                            onClick={() => setFundingReview(item)}
+                            data-testid={`funding-review-${item.id}`}
+                          >
+                            {index === 0 ? '最新' : `v${fundingHistory.length - index}`} ·{' '}
+                            {REVIEW_STATUS_LABEL[item.status] ?? item.status}
+                            {item.bound_rules?.length
+                              ? ` · ${item.bound_rules.length} 条绑定`
+                              : ' · 无绑定'}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : null}
                   {fundingError ? (
                     <p className="msg error" role="alert">
                       {fundingError}
@@ -726,6 +778,68 @@ export default function App() {
                         })}
                       </div>
                     </article>
+                  ) : null}
+                  {fundingReview ? (
+                    <aside className="bound-rules" data-testid="bound-rules">
+                      <div className="panel-head subhead">
+                        <h3>本次绑定规则</h3>
+                        <span className="muted">
+                          {boundRules.length > 0
+                            ? `${boundRules.length} 条（快照于本次核对）`
+                            : '本次未绑定已启用规则'}
+                        </span>
+                      </div>
+                      {boundRules.length === 0 ? (
+                        <p className="muted">停用后的规则不会进入新审查；旧核对仍保留当时版本。</p>
+                      ) : (
+                        <ul className="bound-rule-list">
+                          {boundRules.map((rule: BoundRule) => (
+                            <li
+                              key={`${rule.rule_id}-${rule.version_id}`}
+                              className="bound-rule-card"
+                              data-testid={`bound-rule-${rule.rule_code}`}
+                            >
+                              <div className="candidate-head">
+                                <span className="status-chip">{rule.rule_code}</span>
+                                <span className="status-chip">v{rule.version_number}</span>
+                                <strong>{rule.name}</strong>
+                              </div>
+                              <dl className="issue-grid">
+                                <div>
+                                  <dt>类别</dt>
+                                  <dd>{rule.category || '未标注（不因此判 FAIL）'}</dd>
+                                </div>
+                                <div>
+                                  <dt>比较对象</dt>
+                                  <dd>{rule.compare_field}</dd>
+                                </div>
+                                <div>
+                                  <dt>要求</dt>
+                                  <dd>
+                                    {comparatorLabel(rule.comparator)}{' '}
+                                    {formatYuan(rule.amount_yuan)}
+                                    {rule.amount_raw ? `（原文 ${rule.amount_raw}）` : ''}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>申请经费对照</dt>
+                                  <dd>{formatYuan(rule.application_amount_yuan)}</dd>
+                                </div>
+                              </dl>
+                              {rule.source_clause || rule.source_quote ? (
+                                <p className="candidate-quote">
+                                  {rule.source_clause ? `${rule.source_clause} · ` : ''}
+                                  {rule.source_quote || '无摘录'}
+                                </p>
+                              ) : null}
+                              {rule.display_note ? (
+                                <p className="muted">{rule.display_note}</p>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </aside>
                   ) : null}
                 </div>
 

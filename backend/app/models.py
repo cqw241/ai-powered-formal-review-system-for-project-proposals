@@ -1,11 +1,11 @@
-"""ORM models for projects, PDF materials, funding reviews, and policies."""
+"""ORM models for projects, PDF materials, funding reviews, policies, and rules."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -172,3 +172,78 @@ class PolicyCandidate(Base):
     )
 
     policy: Mapped[PolicyDocument] = relationship(back_populates="candidates")
+    rule: Mapped[Rule | None] = relationship(
+        back_populates="source_candidate",
+        uselist=False,
+    )
+
+
+class Rule(Base):
+    """Enabled review rule. Disable flips enabled; versions are kept."""
+
+    __tablename__ = "rules"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    rule_code: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    source_candidate_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("policy_candidates.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    policy_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("policies.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    current_version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    source_candidate: Mapped[PolicyCandidate | None] = relationship(back_populates="rule")
+    versions: Mapped[list[RuleVersion]] = relationship(
+        back_populates="rule",
+        cascade="all, delete-orphan",
+        order_by="RuleVersion.version_number",
+    )
+
+
+class RuleVersion(Base):
+    """Immutable snapshot of a rule's requirement. Edits append a new row."""
+
+    __tablename__ = "rule_versions"
+    __table_args__ = (UniqueConstraint("rule_id", "version_number", name="uq_rule_version_number"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    rule_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("rules.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    compare_field: Mapped[str] = mapped_column(String(64), nullable=False, default="申请经费")
+    comparator: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    amount_yuan: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    amount_raw: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_clause: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    policy_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    rule: Mapped[Rule] = relationship(back_populates="versions")

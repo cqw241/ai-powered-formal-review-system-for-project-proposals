@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  disableRule,
+  enableCandidateRule,
+  enableRule,
   getPolicy,
   getPolicyPageText,
   listPolicies,
   policyPageImageUrl,
   updatePolicyCandidate,
+  updateRule,
   uploadPolicy,
 } from './api'
-import type { PolicyCandidate, PolicyDetail, PolicySummary } from './types'
+import type { PolicyCandidate, PolicyDetail, PolicySummary, Rule } from './types'
 
 const STATUS_LABEL: Record<PolicySummary['status'], string> = {
   PROCESSING: '处理中',
@@ -65,6 +69,16 @@ type DraftFields = {
   source_quote: string
 }
 
+type RuleDraftFields = {
+  name: string
+  category: string
+  comparator: string
+  amount_raw: string
+  source_clause: string
+  source_page: string
+  source_quote: string
+}
+
 function toDraft(candidate: PolicyCandidate): DraftFields {
   return {
     title: candidate.title ?? '',
@@ -74,6 +88,35 @@ function toDraft(candidate: PolicyCandidate): DraftFields {
     source_page: candidate.source_page != null ? String(candidate.source_page) : '',
     source_quote: candidate.source_quote ?? '',
   }
+}
+
+function toRuleDraft(rule: Rule): RuleDraftFields {
+  const version = rule.current_version
+  return {
+    name: version?.name ?? rule.name ?? '',
+    category: version?.category ?? '',
+    comparator: version?.comparator ?? 'LE',
+    amount_raw: version?.amount_raw ?? '',
+    source_clause: version?.source_clause ?? '',
+    source_page: version?.source_page != null ? String(version.source_page) : '',
+    source_quote: version?.source_quote ?? '',
+  }
+}
+
+function comparatorLabel(value: string | null | undefined): string {
+  if (value === 'LE') {
+    return '不超过'
+  }
+  if (value === 'LT') {
+    return '小于'
+  }
+  if (value === 'EQ') {
+    return '等于'
+  }
+  if (value === 'GE') {
+    return '不少于'
+  }
+  return value || '未设'
 }
 
 type Props = {
@@ -105,6 +148,12 @@ export default function PolicyWorkspace({ onBack }: Props) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
+
+  const [ruleDraft, setRuleDraft] = useState<RuleDraftFields | null>(null)
+  const [ruleSaving, setRuleSaving] = useState(false)
+  const [ruleError, setRuleError] = useState<string | null>(null)
+  const [ruleNotice, setRuleNotice] = useState<string | null>(null)
+  const [ruleBusyId, setRuleBusyId] = useState<string | null>(null)
 
   const loadPolicies = useCallback(async () => {
     setListLoading(true)
@@ -210,6 +259,9 @@ export default function PolicyWorkspace({ onBack }: Props) {
     setDraft(null)
     setSaveError(null)
     setSaveNotice(null)
+    setRuleDraft(null)
+    setRuleError(null)
+    setRuleNotice(null)
     void loadDetail(policyId)
   }
 
@@ -218,8 +270,27 @@ export default function PolicyWorkspace({ onBack }: Props) {
     setDraft(toDraft(candidate))
     setSaveError(null)
     setSaveNotice(null)
+    setRuleError(null)
+    setRuleNotice(null)
+    setRuleDraft(candidate.rule ? toRuleDraft(candidate.rule) : null)
     if (candidate.source_page) {
       setPageNumber(candidate.source_page)
+    }
+  }
+
+  function attachRule(candidateId: string, rule: Rule) {
+    setDetail((prev) =>
+      prev
+        ? {
+            ...prev,
+            candidates: prev.candidates.map((item) =>
+              item.id === candidateId ? { ...item, rule } : item,
+            ),
+          }
+        : prev,
+    )
+    if (activeCandidateId === candidateId) {
+      setRuleDraft(toRuleDraft(rule))
     }
   }
 
@@ -298,6 +369,82 @@ export default function PolicyWorkspace({ onBack }: Props) {
     }
   }
 
+  async function handleEnable(candidate: PolicyCandidate) {
+    if (!detail) {
+      return
+    }
+    setRuleBusyId(candidate.id)
+    setRuleError(null)
+    setRuleNotice(null)
+    try {
+      const rule = await enableCandidateRule(detail.id, candidate.id)
+      attachRule(candidate.id, rule)
+      setActiveCandidateId(candidate.id)
+      setDraft(toDraft(candidate))
+      setRuleNotice(`已启用 ${rule.rule_code}（v${rule.current_version_number}）。刷新后仍会保留。`)
+    } catch (error) {
+      setRuleError(error instanceof Error ? error.message : '启用规则失败')
+    } finally {
+      setRuleBusyId(null)
+    }
+  }
+
+  async function handleToggleEnabled(candidate: PolicyCandidate) {
+    if (!candidate.rule) {
+      return
+    }
+    setRuleBusyId(candidate.id)
+    setRuleError(null)
+    setRuleNotice(null)
+    try {
+      const rule = candidate.rule.enabled
+        ? await disableRule(candidate.rule.id)
+        : await enableRule(candidate.rule.id)
+      attachRule(candidate.id, rule)
+      setRuleNotice(
+        rule.enabled
+          ? `已重新启用 ${rule.rule_code}（v${rule.current_version_number}）`
+          : `已停用 ${rule.rule_code}；版本记录仍保留，新审查不再绑定。`,
+      )
+    } catch (error) {
+      setRuleError(error instanceof Error ? error.message : '更新启用状态失败')
+    } finally {
+      setRuleBusyId(null)
+    }
+  }
+
+  async function handleSaveRule(event: React.FormEvent) {
+    event.preventDefault()
+    if (!activeCandidate?.rule || !ruleDraft) {
+      return
+    }
+    setRuleSaving(true)
+    setRuleError(null)
+    setRuleNotice(null)
+    try {
+      const pageValue = ruleDraft.source_page.trim()
+      const sourcePage = pageValue ? Number.parseInt(pageValue, 10) : null
+      if (pageValue && (!Number.isFinite(sourcePage) || (sourcePage ?? 0) < 1)) {
+        throw new Error('来源页码须为正整数')
+      }
+      const updated = await updateRule(activeCandidate.rule.id, {
+        name: ruleDraft.name.trim() || activeCandidate.rule.name,
+        category: ruleDraft.category.trim() || null,
+        comparator: ruleDraft.comparator.trim() || 'LE',
+        amount_raw: ruleDraft.amount_raw.trim() || null,
+        source_clause: ruleDraft.source_clause.trim() || null,
+        source_page: sourcePage,
+        source_quote: ruleDraft.source_quote.trim() || null,
+      })
+      attachRule(activeCandidate.id, updated)
+      setRuleNotice(`已保存为 v${updated.current_version_number}；历史版本不变。`)
+    } catch (error) {
+      setRuleError(error instanceof Error ? error.message : '保存规则失败')
+    } finally {
+      setRuleSaving(false)
+    }
+  }
+
   return (
     <section className="panel" data-testid="policy-workspace">
       <div className="panel-head">
@@ -308,7 +455,7 @@ export default function PolicyWorkspace({ onBack }: Props) {
       </div>
 
       <p className="muted funding-hint">
-        上传模拟申报指南 PDF 后可预览原文，并查看可编辑的候选要求草稿。候选不是已启用规则；启用与版本留给后续分支。
+        上传模拟申报指南 PDF 后可预览原文并编辑候选草稿。经费上限候选可启为 RULE-005（自然科学类与人文社会科学类会各成一条）。启用后改上限须走「编辑已启用规则」追加版本；只改候选草稿不会进入新审查。停用后不再进入新审查。
       </p>
 
       <form className="upload-form" onSubmit={(event) => void handleUpload(event)}>
@@ -467,8 +614,10 @@ export default function PolicyWorkspace({ onBack }: Props) {
             <ul className="candidate-list" data-testid="policy-candidate-list">
               {detail.candidates.map((candidate) => {
                 const active = candidate.id === activeCandidateId
+                const rule = candidate.rule
+                const busy = ruleBusyId === candidate.id
                 return (
-                  <li key={candidate.id}>
+                  <li key={candidate.id} className="candidate-row">
                     <button
                       type="button"
                       className={`candidate-card${active ? ' active' : ''}${
@@ -485,6 +634,17 @@ export default function PolicyWorkspace({ onBack }: Props) {
                         </span>
                         {candidate.source_clause ? (
                           <span className="status-chip">{candidate.source_clause}</span>
+                        ) : null}
+                        {rule ? (
+                          <span
+                            className={`status-chip ${rule.enabled ? 'status-review-pass' : ''}`}
+                            data-testid={`rule-status-${candidate.id}`}
+                          >
+                            {rule.enabled ? '已启用' : '已停用'} · {rule.rule_code} v
+                            {rule.current_version_number}
+                          </span>
+                        ) : candidate.kind === 'FUNDING_CAP' ? (
+                          <span className="status-chip">草稿未启用</span>
                         ) : null}
                         <strong>{candidate.title}</strong>
                       </span>
@@ -507,6 +667,30 @@ export default function PolicyWorkspace({ onBack }: Props) {
                         <span className="candidate-quote">{candidate.source_quote}</span>
                       ) : null}
                     </button>
+                    {candidate.kind === 'FUNDING_CAP' ? (
+                      <div className="candidate-actions">
+                        {rule ? (
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            disabled={busy}
+                            onClick={() => void handleToggleEnabled(candidate)}
+                            data-testid={`rule-toggle-${candidate.id}`}
+                          >
+                            {busy ? '处理中…' : rule.enabled ? '停用规则' : '重新启用'}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void handleEnable(candidate)}
+                            data-testid={`rule-enable-${candidate.id}`}
+                          >
+                            {busy ? '启用中…' : '启用为规则'}
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
                   </li>
                 )
               })}
@@ -521,7 +705,7 @@ export default function PolicyWorkspace({ onBack }: Props) {
             >
               <div className="panel-head subhead">
                 <h3>编辑候选</h3>
-                <span className="muted">修改后保存，刷新页面仍保留</span>
+                <span className="muted">草稿修改刷新后仍保留；不会写入已启用规则，新审查也不使用</span>
               </div>
               <div className="candidate-edit-grid">
                 <label>
@@ -591,6 +775,134 @@ export default function PolicyWorkspace({ onBack }: Props) {
               ) : null}
               {saveNotice ? <p className="msg ok">{saveNotice}</p> : null}
             </form>
+          ) : null}
+
+          {activeCandidate?.rule && ruleDraft ? (
+            <form
+              className="candidate-edit-form"
+              onSubmit={(event) => void handleSaveRule(event)}
+              data-testid="rule-edit-form"
+            >
+              <div className="panel-head subhead">
+                <h3>编辑已启用规则</h3>
+                <span className="muted">
+                  {activeCandidate.rule.rule_code} ·{' '}
+                  {activeCandidate.rule.enabled ? '已启用' : '已停用'} · 当前 v
+                  {activeCandidate.rule.current_version_number}
+                  ；保存将新增版本，不改历史版本
+                </span>
+              </div>
+              <div className="candidate-edit-grid">
+                <label>
+                  名称
+                  <input
+                    value={ruleDraft.name}
+                    onChange={(event) => setRuleDraft({ ...ruleDraft, name: event.target.value })}
+                    disabled={ruleSaving}
+                    data-testid="rule-name-input"
+                  />
+                </label>
+                <label>
+                  类别
+                  <input
+                    value={ruleDraft.category}
+                    onChange={(event) => setRuleDraft({ ...ruleDraft, category: event.target.value })}
+                    disabled={ruleSaving}
+                    data-testid="rule-category-input"
+                  />
+                </label>
+                <label>
+                  比较对象
+                  <input value="申请经费" disabled readOnly />
+                </label>
+                <label>
+                  要求
+                  <select
+                    value={ruleDraft.comparator}
+                    onChange={(event) =>
+                      setRuleDraft({ ...ruleDraft, comparator: event.target.value })
+                    }
+                    disabled={ruleSaving}
+                    data-testid="rule-comparator-input"
+                  >
+                    <option value="LE">不超过（LE）</option>
+                    <option value="LT">小于（LT）</option>
+                    <option value="EQ">等于（EQ）</option>
+                    <option value="GE">不少于（GE）</option>
+                  </select>
+                </label>
+                <label>
+                  金额原文
+                  <input
+                    value={ruleDraft.amount_raw}
+                    onChange={(event) =>
+                      setRuleDraft({ ...ruleDraft, amount_raw: event.target.value })
+                    }
+                    disabled={ruleSaving}
+                    data-testid="rule-amount-input"
+                    placeholder="例如 28万元；无法解析时规范化为未知"
+                  />
+                </label>
+                <label>
+                  来源条款
+                  <input
+                    value={ruleDraft.source_clause}
+                    onChange={(event) =>
+                      setRuleDraft({ ...ruleDraft, source_clause: event.target.value })
+                    }
+                    disabled={ruleSaving}
+                  />
+                </label>
+                <label>
+                  来源页码
+                  <input
+                    value={ruleDraft.source_page}
+                    onChange={(event) =>
+                      setRuleDraft({ ...ruleDraft, source_page: event.target.value })
+                    }
+                    disabled={ruleSaving}
+                    inputMode="numeric"
+                  />
+                </label>
+                <label className="full-width">
+                  政策出处 / 原文摘录
+                  <textarea
+                    value={ruleDraft.source_quote}
+                    onChange={(event) =>
+                      setRuleDraft({ ...ruleDraft, source_quote: event.target.value })
+                    }
+                    disabled={ruleSaving}
+                    rows={3}
+                  />
+                </label>
+              </div>
+              <p className="muted">
+                当前要求：{comparatorLabel(ruleDraft.comparator)}{' '}
+                {activeCandidate.rule.current_version?.amount_yuan == null
+                  ? '未知（非 0）'
+                  : formatYuan(activeCandidate.rule.current_version.amount_yuan)}
+              </p>
+              <div className="create-row">
+                <button type="submit" disabled={ruleSaving}>
+                  {ruleSaving ? '保存中…' : '保存为新版本'}
+                </button>
+              </div>
+              {ruleError ? (
+                <p className="msg error" role="alert">
+                  {ruleError}
+                </p>
+              ) : null}
+              {ruleNotice ? <p className="msg ok">{ruleNotice}</p> : null}
+            </form>
+          ) : ruleError || ruleNotice ? (
+            <>
+              {ruleError ? (
+                <p className="msg error" role="alert">
+                  {ruleError}
+                </p>
+              ) : null}
+              {ruleNotice ? <p className="msg ok">{ruleNotice}</p> : null}
+            </>
           ) : null}
         </>
       ) : null}

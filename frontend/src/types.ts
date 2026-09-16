@@ -72,6 +72,25 @@ export type FundingFinding = {
   compared_at: string | null
 }
 
+export type BoundRule = {
+  rule_id: string
+  version_id: string
+  version_number: number
+  rule_code: string
+  name: string
+  category: string | null
+  compare_field: string
+  comparator: string | null
+  amount_yuan: number | null
+  amount_raw: string | null
+  source_clause: string | null
+  source_page: number | null
+  source_quote: string | null
+  policy_id: string | null
+  application_amount_yuan: number | null
+  display_note: string | null
+}
+
 export type FundingReview = {
   id: string
   project_id: string
@@ -79,6 +98,47 @@ export type FundingReview = {
   status: ReviewStatus
   created_at: string
   finding: FundingFinding
+  bound_rules?: BoundRule[]
+}
+
+export type RuleVersion = {
+  id: string
+  rule_id: string
+  version_number: number
+  name: string
+  category: string | null
+  compare_field: string
+  comparator: string | null
+  amount_yuan: number | null
+  amount_raw: string | null
+  source_clause: string | null
+  source_page: number | null
+  source_quote: string | null
+  policy_id: string | null
+  created_at: string
+}
+
+export type Rule = {
+  id: string
+  rule_code: string
+  name: string
+  enabled: boolean
+  source_candidate_id: string | null
+  policy_id: string | null
+  current_version_number: number
+  created_at: string
+  versions: RuleVersion[]
+  current_version: RuleVersion | null
+}
+
+export type RuleUpdate = {
+  name?: string | null
+  category?: string | null
+  comparator?: string | null
+  amount_raw?: string | null
+  source_clause?: string | null
+  source_page?: number | null
+  source_quote?: string | null
 }
 
 export type PolicyStatus = 'PROCESSING' | 'READY' | 'FAILED'
@@ -99,6 +159,7 @@ export type PolicyCandidate = {
   sort_order: number
   created_at: string
   updated_at: string
+  rule?: Rule | null
 }
 
 export type PolicyCandidateUpdate = {
