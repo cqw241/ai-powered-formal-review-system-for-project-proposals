@@ -602,6 +602,18 @@ button:disabled {
   gap: 0.65rem;
 }
 
+.candidate-row {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .candidate-card {
   width: 100%;
   text-align: left;
@@ -677,6 +689,7 @@ button:disabled {
 }
 
 .candidate-edit-grid input,
+.candidate-edit-grid select,
 .candidate-edit-grid textarea {
   font: inherit;
   font-weight: 400;
@@ -689,6 +702,45 @@ button:disabled {
 .candidate-edit-grid textarea {
   resize: vertical;
   min-height: 4.5rem;
+}
+
+.review-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.75rem 0 1rem;
+}
+
+.review-history .ghost-btn.active {
+  border-color: #2f6bff;
+  background: #eef3ff;
+  color: #1f4fd6;
+}
+
+.bound-rules {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #e5ecf5;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.bound-rule-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.bound-rule-card {
+  padding: 0.85rem 0.95rem;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  background: #fff;
+  display: grid;
+  gap: 0.55rem;
 }
 
 @media (max-width: 640px) {

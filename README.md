@@ -1,6 +1,6 @@
 # 规证AI
 
-高校项目申报材料形式审查辅助应用。当前分支实现 **B04 政策导入**：在 B01–B03 项目持久化、PDF 上传预览与申请经费核对之上，支持政策 PDF 上传、原文预览与候选要求提取（可编辑草稿）。
+高校项目申报材料形式审查辅助应用。当前分支实现 **B05 规则编辑**：在 B01–B04 之上，可将经费上限候选启为 RULE-005，编辑生成新版本，停用后退出新审查；每次经费核对绑定当时已启用规则版本。
 
 > 本版本仅供本地开发。未实现登录与项目权限，**不要当作可安全公开部署的版本**。
 
@@ -24,11 +24,13 @@ backend/
     api/materials.py    # 材料上传 / 列表 / 页文本 / 页图
     api/funding.py      # 申请经费核对
     api/policies.py     # 政策上传 / 预览 / 候选要求
+    api/rules.py        # 规则启用 / 停用 / 版本编辑
     services/money.py
     services/funding_extract.py
     services/funding_review.py
     services/policy_extract.py
     services/policy_storage.py
+    services/rules.py
     services/pdf.py
     llm/                # 云端图像调用（文本不足时可选回退）
   fixtures/pdfs/        # A1/A2/A3、A2_320000、POL 申报指南
@@ -40,6 +42,7 @@ docs/competition-review/
   B02_实现与验收记录.md
   B03_实现与验收记录.md
   B04_实现与验收记录.md
+  B05_实现与验收记录.md
 .env.example
 ```
 
@@ -99,7 +102,7 @@ npm run dev
 
 浏览器打开 Vite 提示的地址（默认 `http://127.0.0.1:5173`）。前端通过 Vite 代理访问 `/api`。
 
-首次启动会在 `backend/data/app.db` 创建表，并在 `MATERIALS_DIR` / `POLICIES_DIR` 保存上传文件；**重启不会删除已有项目、材料、经费核对结果与政策候选**。
+首次启动会在 `backend/data/app.db` 创建表（`create_all` 只补缺失表），并在 `MATERIALS_DIR` / `POLICIES_DIR` 保存上传文件；**重启不会删除已有项目、材料、经费核对结果、政策候选与规则版本**。
 
 ### 数据库初始化
 
@@ -137,10 +140,12 @@ uv run python -c "from app.db import init_db; init_db(); print('ok')"
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `POST` | `/api/projects/{project_id}/funding-review` | 提取并比较申请经费，持久化问题卡 |
+| `POST` | `/api/projects/{project_id}/funding-review` | 提取并比较申请经费，持久化问题卡；快照当时已启用规则 |
 | `GET` | `/api/projects/{project_id}/funding-review` | 最新核对结果；无则 404 |
+| `GET` | `/api/projects/{project_id}/funding-reviews` | 历史核对（新到旧）；每条含当时 `bound_rules` |
+| `GET` | `/api/projects/{project_id}/funding-reviews/{review_id}` | 指定一次核对及其绑定快照 |
 
-比较对象仅为「申请经费 / 申请总额」。单位换算：万元×10000、千元×1000、元保持不变。未知值不当作 0。
+比较对象仅为「申请经费 / 申请总额」。单位换算：万元×10000、千元×1000、元保持不变。未知值不当作 0。RULE-007 行为不变。若启用了 RULE-005，结果展示绑定的类别/上限版本，可用已提取申请经费对照，**不**按项目学科类别裁决，缺类别不判 FAIL。
 
 ### 政策与候选要求（B04）
 
@@ -155,13 +160,26 @@ uv run python -c "from app.db import init_db; init_db(); print('ok')"
 
 候选是可编辑草稿，**不是**已启用规则。经费上限类保留类别、金额（含单位/规范化元）与来源（条款/页码/摘录）。
 
-## B04 使用说明
+### 规则启用与版本（B05）
 
-1. 顶部导航进入「政策与候选要求」。
-2. 上传模拟申报指南 PDF（见下）。
-3. 在原文预览中翻页查看页图与原生文本。
-4. 查看候选列表；P-05 应出现自然科学类 ≤30 万元、人文社会科学类 ≤15 万元，并带来源。
-5. 点击候选可修改类别/金额/摘录等，保存后刷新仍保留。
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `POST` | `/api/policies/{id}/candidates/{candidate_id}/enable` | 从 FUNDING_CAP 草稿生成 Rule + RuleVersion（`rule_code=RULE-005`）；已有则重新启用 |
+| `GET` | `/api/rules` | 规则列表（含版本） |
+| `GET` | `/api/rules/{id}` | 规则详情 |
+| `PATCH` | `/api/rules/{id}` | 编辑已启用规则：新增版本，不改历史版本 |
+| `POST` | `/api/rules/{id}/disable` | 停用（只改 `enabled`，不删版本） |
+| `POST` | `/api/rules/{id}/enable` | 重新启用（不新增版本） |
+
+规则至少保留：名称、政策出处、类别、比较对象（申请经费）、要求（comparator + amount_yuan，未知不当 0）。
+
+## B05 使用说明
+
+1. 顶部导航进入「政策与候选要求」，上传模拟申报指南 PDF。
+2. 在经费上限候选旁点击「启用为规则」；可编辑名称/类别/上限并保存为新版本。
+3. 刷新页面后启用状态与版本号仍在。
+4. 打开项目，上传申报书与预算表，点击「开始核对」：RULE-007 结果旁展示本次绑定的 RULE-005 版本。
+5. 停用规则后再核对：新结果不含该规则；点开历史核对比对，旧结果仍含当时版本。
 
 样例政策：
 
@@ -190,14 +208,13 @@ cd frontend
 npm run build
 ```
 
-## B05 接续入口
+## B06 接续入口
 
-- 政策详情与候选草稿：`/api/policies/{id}`
-- 候选编辑持久化：`PATCH /api/policies/{id}/candidates/{candidate_id}`
-- 经费上限草稿字段：`kind=FUNDING_CAP` + `category` + `amount_yuan`（可映射 RULE-005）
-- 前端政策工作台：`frontend/src/PolicyWorkspace.tsx`
+- 已启用规则：`GET /api/rules`
+- 经费核对绑定快照：`POST/GET /api/projects/{id}/funding-review` 的 `bound_rules`
+- 历史核对：`GET /api/projects/{id}/funding-reviews`
 
-B05 再做规则编辑、启用/停用与版本记录；**不要**在本分支提前实现。
+B06 再做选择规则、发起任务与审查工作台；**不要**在本分支提前实现。
 
 ## 验收记录
 
@@ -205,6 +222,7 @@ B05 再做规则编辑、启用/停用与版本记录；**不要**在本分支�
 - [B02 实现与验收记录](docs/competition-review/B02_实现与验收记录.md)
 - [B03 实现与验收记录](docs/competition-review/B03_实现与验收记录.md)
 - [B04 实现与验收记录](docs/competition-review/B04_实现与验收记录.md)
+- [B05 实现与验收记录](docs/competition-review/B05_实现与验收记录.md)
 
 ## 可选：安装环境排障
 

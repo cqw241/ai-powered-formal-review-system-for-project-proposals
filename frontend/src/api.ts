@@ -10,6 +10,8 @@ import type {
   PolicyPageText,
   PolicySummary,
   Project,
+  Rule,
+  RuleUpdate,
 } from './types'
 
 async function parseError(response: Response): Promise<string> {
@@ -119,6 +121,27 @@ export async function getFundingReview(projectId: string): Promise<FundingReview
   return response.json() as Promise<FundingReview>
 }
 
+export async function listFundingReviews(projectId: string): Promise<FundingReview[]> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/funding-reviews`)
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<FundingReview[]>
+}
+
+export async function getFundingReviewById(
+  projectId: string,
+  reviewId: string,
+): Promise<FundingReview> {
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/funding-reviews/${encodeURIComponent(reviewId)}`,
+  )
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<FundingReview>
+}
+
 export async function listPolicies(): Promise<PolicySummary[]> {
   const response = await fetch('/api/policies')
   if (!response.ok) {
@@ -179,4 +202,43 @@ export async function updatePolicyCandidate(
     throw new Error(await parseError(response))
   }
   return response.json() as Promise<PolicyCandidate>
+}
+
+export async function enableCandidateRule(policyId: string, candidateId: string): Promise<Rule> {
+  const response = await fetch(
+    `/api/policies/${encodeURIComponent(policyId)}/candidates/${encodeURIComponent(candidateId)}/enable`,
+    { method: 'POST' },
+  )
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<Rule>
+}
+
+export async function disableRule(ruleId: string): Promise<Rule> {
+  const response = await fetch(`/api/rules/${encodeURIComponent(ruleId)}/disable`, { method: 'POST' })
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<Rule>
+}
+
+export async function enableRule(ruleId: string): Promise<Rule> {
+  const response = await fetch(`/api/rules/${encodeURIComponent(ruleId)}/enable`, { method: 'POST' })
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<Rule>
+}
+
+export async function updateRule(ruleId: string, patch: RuleUpdate): Promise<Rule> {
+  const response = await fetch(`/api/rules/${encodeURIComponent(ruleId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<Rule>
 }

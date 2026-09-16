@@ -46,3 +46,30 @@ def get_funding_review(project_id: str, db: Session = Depends(get_db)) -> Fundin
             detail="尚未进行申请经费核对",
         )
     return review_service.to_funding_review_read(review)
+
+
+@router.get(
+    "/api/projects/{project_id}/funding-reviews",
+    response_model=list[FundingReviewRead],
+)
+def list_funding_reviews(project_id: str, db: Session = Depends(get_db)) -> list[FundingReviewRead]:
+    """Return funding reviews newest-first; each row keeps its bound_rules snapshot."""
+    _get_project_or_404(db, project_id)
+    reviews = review_service.list_funding_reviews(db, project_id)
+    return [review_service.to_funding_review_read(item) for item in reviews]
+
+
+@router.get(
+    "/api/projects/{project_id}/funding-reviews/{review_id}",
+    response_model=FundingReviewRead,
+)
+def get_funding_review_by_id(
+    project_id: str,
+    review_id: str,
+    db: Session = Depends(get_db),
+) -> FundingReviewRead:
+    _get_project_or_404(db, project_id)
+    review = review_service.get_funding_review(db, project_id, review_id)
+    if review is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="核对记录不存在")
+    return review_service.to_funding_review_read(review)

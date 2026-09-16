@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import Settings, get_settings
 from app.db import get_db
-from app.models import PolicyCandidate, PolicyDocument, PolicyStatus, utc_now
+from app.models import PolicyCandidate, PolicyDocument, PolicyStatus, Rule, utc_now
 from app.schemas import (
     PolicyCandidateRead,
     PolicyCandidateUpdate,
@@ -61,7 +61,11 @@ def _get_policy_with_candidates_or_404(db: Session, policy_id: str) -> PolicyDoc
     statement = (
         select(PolicyDocument)
         .where(PolicyDocument.id == policy_id)
-        .options(selectinload(PolicyDocument.candidates))
+        .options(
+            selectinload(PolicyDocument.candidates)
+            .selectinload(PolicyCandidate.rule)
+            .selectinload(Rule.versions)
+        )
     )
     policy = db.scalars(statement).first()
     if policy is None:

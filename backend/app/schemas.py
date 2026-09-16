@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 from app.models import FundingReviewStatus, MaterialCategory, MaterialStatus, PolicyStatus
 
@@ -134,6 +134,27 @@ class FundingFinding(BaseModel):
         return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+class BoundRuleSnapshot(BaseModel):
+    """Frozen enabled-rule version bound to one funding-review run."""
+
+    rule_id: str
+    version_id: str
+    version_number: int
+    rule_code: str
+    name: str
+    category: str | None = None
+    compare_field: str
+    comparator: str | None = None
+    amount_yuan: int | None = None
+    amount_raw: str | None = None
+    source_clause: str | None = None
+    source_page: int | None = None
+    source_quote: str | None = None
+    policy_id: str | None = None
+    application_amount_yuan: int | None = None
+    display_note: str | None = None
+
+
 class FundingReviewRead(BaseModel):
     """Aligned with ProjectRead / MaterialRead: ORM-friendly + UTC ISO created_at."""
 
@@ -145,6 +166,7 @@ class FundingReviewRead(BaseModel):
     status: FundingReviewStatus
     created_at: datetime
     finding: FundingFinding
+    bound_rules: list[BoundRuleSnapshot] = Field(default_factory=list)
 
     @field_validator("created_at")
     @classmethod
@@ -168,6 +190,88 @@ def _serialize_utc(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+class RuleVersionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    rule_id: str
+    version_number: int
+    name: str
+    category: str | None
+    compare_field: str
+    comparator: str | None
+    amount_yuan: int | None
+    amount_raw: str | None
+    source_clause: str | None
+    source_page: int | None
+    source_quote: str | None
+    policy_id: str | None
+    created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def ensure_utc(cls, value: datetime) -> datetime:
+        return _ensure_utc(value)
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime) -> str:
+        return _serialize_utc(value)
+
+
+class RuleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    rule_code: str
+    name: str
+    enabled: bool
+    source_candidate_id: str | None
+    policy_id: str | None
+    current_version_number: int
+    created_at: datetime
+    versions: list[RuleVersionRead] = Field(default_factory=list)
+    current_version: RuleVersionRead | None = None
+
+    @field_validator("created_at")
+    @classmethod
+    def ensure_utc(cls, value: datetime) -> datetime:
+        return _ensure_utc(value)
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime) -> str:
+        return _serialize_utc(value)
+
+    @model_validator(mode="after")
+    def attach_current_version(self) -> RuleRead:
+        if self.current_version is None and self.versions:
+            match = next(
+                (item for item in self.versions if item.version_number == self.current_version_number),
+                None,
+            )
+            self.current_version = match or self.versions[-1]
+        return self
+
+
+class RuleUpdate(BaseModel):
+    """Partial update for an enabled rule; applied as a new immutable version."""
+
+    name: str | None = Field(default=None, max_length=300)
+    category: str | None = Field(default=None, max_length=100)
+    comparator: str | None = Field(default=None, max_length=16)
+    amount_raw: str | None = Field(default=None, max_length=64)
+    source_clause: str | None = Field(default=None, max_length=64)
+    source_page: int | None = Field(default=None, ge=1)
+    source_quote: str | None = None
+
+    @field_validator("name", "category", "comparator", "amount_raw", "source_clause", "source_quote")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned if cleaned else None
+
+
 class PolicyCandidateRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -186,6 +290,7 @@ class PolicyCandidateRead(BaseModel):
     sort_order: int
     created_at: datetime
     updated_at: datetime
+    rule: RuleRead | None = None
 
     @field_validator("created_at", "updated_at")
     @classmethod
