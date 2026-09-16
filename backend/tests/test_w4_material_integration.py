@@ -86,6 +86,30 @@ def test_pkg_c_98000_device_missing_necessity_attachment(client):
     assert any(row.get("quote") for row in ethics["result"]["evidence"])
 
 
+def test_equipment_attachment_file_marks_rule_008_pass(client):
+    project_id = _pack(
+        client,
+        "PKG-C-with-attachment",
+        [
+            ("C1_项目申报书.pdf", "APPLICATION"),
+            ("C2_经费预算表.pdf", "BUDGET"),
+            ("C3_科研诚信与合规承诺书.pdf", "COMMITMENT"),
+        ],
+    )
+    path = FIXTURES / "C2_经费预算表.pdf"
+    uploaded = client.post(
+        f"/api/projects/{project_id}/materials",
+        data={"category": "OTHER"},
+        files={"file": ("设备必要性说明.pdf", path.read_bytes(), "application/pdf")},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    body = _start(client, project_id)
+    item = _item(body, "RULE-008")
+    assert item["check_status"] == "PASS"
+    assert item["status"] == "COMPLETED"
+    assert "已提供" in item["summary"]
+
+
 def test_pkg_a_conditional_attachment_not_applicable(client):
     project_id = _pack(
         client,

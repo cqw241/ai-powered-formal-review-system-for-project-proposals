@@ -81,6 +81,8 @@ _INVOLVED_RES = (
     re.compile(r"采集操作负荷"),
     re.compile(r"生物样本"),
     re.compile(r"受限制数据"),
+    re.compile(r"去标识化历史脑电"),
+    re.compile(r"合作单位提供的去标识化"),
 )
 _UNCLEAR_RES = (
     re.compile(r"是否构成个人敏感信息"),
@@ -89,8 +91,6 @@ _UNCLEAR_RES = (
     re.compile(r"未附.{0,20}数据授权"),
     re.compile(r"未给出.{0,12}伦理审批编号"),
     re.compile(r"正式实验前将补齐"),
-    re.compile(r"去标识化历史脑电"),
-    re.compile(r"合作单位提供的去标识化"),
 )
 _APPROVAL_RES = (
     re.compile(r"伦理审批编号[:：]?\s*[A-Za-z0-9\-]+"),
@@ -184,6 +184,7 @@ class ExtractedEquipment:
 
     items: tuple[EquipmentItem, ...]
     equipment_fee_yuan: int | None
+    equipment_fee_quote: str | None
     max_unit_price_yuan: int | None
     no_large_device_stated: bool
     unit_price_uncertain: bool
@@ -196,6 +197,7 @@ class ExtractedEquipment:
         return {
             "items": [item.as_dict() for item in self.items],
             "equipment_fee_yuan": self.equipment_fee_yuan,
+            "equipment_fee_quote": self.equipment_fee_quote,
             "max_unit_price_yuan": self.max_unit_price_yuan,
             "no_large_device_stated": self.no_large_device_stated,
             "unit_price_uncertain": self.unit_price_uncertain,
@@ -261,6 +263,7 @@ def extract_equipment(path: Path) -> ExtractedEquipment:
         return ExtractedEquipment(
             items=(),
             equipment_fee_yuan=None,
+            equipment_fee_quote=None,
             max_unit_price_yuan=None,
             no_large_device_stated=False,
             unit_price_uncertain=True,
@@ -272,6 +275,7 @@ def extract_equipment(path: Path) -> ExtractedEquipment:
     try:
         items: list[EquipmentItem] = []
         fee_yuan: int | None = None
+        fee_quote: str | None = None
         fee_page: int | None = None
         no_large = False
         absence = False
@@ -323,6 +327,7 @@ def extract_equipment(path: Path) -> ExtractedEquipment:
                         if parsed is not None:
                             fee_yuan = parsed.amount_yuan
                             fee_page = page_number
+                            fee_quote = " ".join(part for part in (name, amount_text, note) if part)
                         item = _item_from_note(
                             page,
                             name=name,
@@ -367,6 +372,7 @@ def extract_equipment(path: Path) -> ExtractedEquipment:
         return ExtractedEquipment(
             items=tuple(items),
             equipment_fee_yuan=fee_yuan,
+            equipment_fee_quote=fee_quote,
             max_unit_price_yuan=max_unit,
             no_large_device_stated=no_large,
             unit_price_uncertain=uncertain,
@@ -423,6 +429,53 @@ def find_equipment_attachment(
         finally:
             doc.close()
     return None
+
+
+def collect_attachment_absence(
+    manifest: MaterialManifest,
+    settings: Settings | None = None,
+) -> tuple[AttachmentHit, ...]:
+    """Quotes that say the equipment-necessity attachment is not in the pack."""
+    cfg = settings or get_settings()
+    hits: list[AttachmentHit] = []
+    for material in manifest.ready:
+        if material.category not in {
+            MaterialCategory.BUDGET.value,
+            MaterialCategory.COMMITMENT.value,
+        }:
+            continue
+        path = material_file_path(material.id, cfg)
+        try:
+            doc = pdf_service.open_document(path)
+        except pdf_service.PdfError:
+            continue
+        try:
+            for page_index in range(doc.page_count):
+                page = doc.load_page(page_index)
+                text = page.get_text() or ""
+                if not _mentions_absence(text):
+                    continue
+                quote = (
+                    _quote_around(text, "设备必要性说明")
+                    or _quote_around(text, "当前包内未提供")
+                    or "当前包内未提供设备必要性说明"
+                )
+                hits.append(
+                    AttachmentHit(
+                        material_id=material.id,
+                        category=material.category,
+                        original_filename=material.original_filename,
+                        page_number=page_index + 1,
+                        quote=quote,
+                        bbox=_search_bbox(page, "设备必要性说明") or _search_bbox(page, "当前包内未提供"),
+                        present=False,
+                        reason="完整范围内确认未提供该附件",
+                    )
+                )
+                break
+        finally:
+            doc.close()
+    return tuple(hits)
 
 
 def extract_ethics_signals(

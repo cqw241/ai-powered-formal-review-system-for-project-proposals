@@ -22,7 +22,6 @@ from app.review_contract import (
 )
 from app.services.funding_extract import BBox
 from app.services.material_extract import (
-    ATTACHMENT_ABSENCE_MARKERS,
     CATEGORY_LABELS,
     EQUIPMENT_THRESHOLD_YUAN,
     REQUIRED_CATEGORIES,
@@ -31,6 +30,7 @@ from app.services.material_extract import (
     EthicsSignal,
     ExtractedEquipment,
     MaterialManifest,
+    collect_attachment_absence,
     extract_equipment,
     extract_ethics_signals,
     find_equipment_attachment,
@@ -216,6 +216,15 @@ def execute_equipment_attachment_rule(
             data=data,
         )
 
+    if manifest.failed:
+        evidence.extend(_failed_material_evidence(manifest.failed))
+        return _human(
+            "存在无法读取的材料，不能把尚未找到当成确认缺附件；待确认：文件损坏",
+            evidence=evidence,
+            data=data,
+            fields=["设备必要性说明"],
+        )
+
     if extracted.absence_stated and extracted.absence_quote:
         evidence.append(
             ReviewEvidence(
@@ -300,7 +309,18 @@ def execute_ethics_rule(db: Session, context: RuleExecutionContext) -> RuleExecu
         item.kind == "missing_proof" and "既无审批编号" in (item.quote or "")
         for item in signals
     )
-    if involved and submission_required and (explicit_missing or (missing_proof and not has_approval)):
+    confirmed_missing = involved and submission_required and (
+        explicit_missing or (missing_proof and not has_approval)
+    )
+    if confirmed_missing:
+        if manifest.failed:
+            evidence.extend(_failed_material_evidence(manifest.failed))
+            return _human(
+                "存在无法读取的材料，不能确认伦理审批材料缺失；待确认：文件损坏",
+                evidence=evidence,
+                data=data,
+                fields=["伦理审批材料"],
+            )
         questions = _ethics_questions(signals)
         data["pending_questions"] = questions
         return RuleExecutionResult(
@@ -308,18 +328,6 @@ def execute_ethics_rule(db: Session, context: RuleExecutionContext) -> RuleExecu
             summary="材料明确涉及人体受试者且提交时须提供伦理审批，完整范围内既无审批编号也无进行中证明",
             evidence=evidence,
             data=data,
-        )
-
-    if unclear or (involved and not has_approval and not not_involved):
-        questions = _ethics_questions(signals)
-        data["pending_questions"] = questions
-        question_text = "；".join(questions) if questions else "伦理适用性或审批/授权关系不清"
-        basis = _basis_text(signals)
-        return _human(
-            f"伦理适用性不清。依据：{basis}。待确认：{question_text}",
-            evidence=evidence,
-            data=data,
-            fields=["伦理适用性"],
         )
 
     if not_involved and not involved:
@@ -338,18 +346,19 @@ def execute_ethics_rule(db: Session, context: RuleExecutionContext) -> RuleExecu
             data=data,
         )
 
-    if not involved and not unclear:
-        return RuleExecutionResult(
-            status=ReviewCheckStatus.PASS,
-            summary="材料未显示涉及人体受试者、个人敏感信息、生物样本或受限制数据",
-            evidence=evidence,
-            data=data,
-        )
-
     questions = _ethics_questions(signals)
     data["pending_questions"] = questions
+    if not kinds:
+        return _human(
+            "材料未给出可判定适用性的明确表述，无法确定是否涉及人体受试者、个人敏感信息、生物样本或受限制数据，不直接通过",
+            evidence=evidence,
+            data=data,
+            fields=["伦理适用性"],
+        )
+    question_text = "；".join(questions) if questions else "伦理适用性或审批/授权关系不清"
+    basis = _basis_text(signals)
     return _human(
-        "无法判断数据是否属于伦理触发范围，需人工确认",
+        f"伦理适用性不清。依据：{basis}。待确认：{question_text}",
         evidence=evidence,
         data=data,
         fields=["伦理适用性"],
@@ -512,7 +521,7 @@ def _equipment_evidence(material: Material, extracted: ExtractedEquipment) -> li
                 raw_value=str(extracted.equipment_fee_yuan),
                 normalized_value=extracted.equipment_fee_yuan,
                 page_number=extracted.page_number,
-                quote=extracted.absence_quote,
+                quote=extracted.equipment_fee_quote,
                 reliable=True,
                 reason=None,
             )
@@ -567,49 +576,39 @@ def _attachment_evidence(hit: AttachmentHit) -> ReviewEvidence:
     )
 
 
-def _absence_quotes_from_pack(manifest: MaterialManifest, settings) -> list[ReviewEvidence]:
-    extra: list[ReviewEvidence] = []
-    for material in manifest.ready:
-        if material.category not in {
-            MaterialCategory.BUDGET.value,
-            MaterialCategory.COMMITMENT.value,
-        }:
-            continue
-        path = material_file_path(material.id, settings)
-        try:
-            from app.services import pdf as pdf_service
+def _failed_material_evidence(materials: tuple[Material, ...]) -> list[ReviewEvidence]:
+    return [
+        ReviewEvidence(
+            material_id=item.id,
+            category=item.category,
+            original_filename=item.original_filename,
+            field_name="处理状态",
+            raw_value=item.status,
+            normalized_value=item.status,
+            reliable=False,
+            reason="文件损坏或读取失败，不能当作确认缺失",
+        )
+        for item in materials
+    ]
 
-            doc = pdf_service.open_document(path)
-        except Exception:  # noqa: BLE001
-            continue
-        try:
-            for page_index in range(doc.page_count):
-                page = doc.load_page(page_index)
-                text = page.get_text() or ""
-                compact = text.replace(" ", "").replace("\u3000", "")
-                mentions_absence = any(
-                    marker.replace(" ", "") in compact for marker in ATTACHMENT_ABSENCE_MARKERS
-                ) or ("未提供" in text and "设备必要性说明" in text)
-                if not mentions_absence:
-                    continue
-                extra.append(
-                    ReviewEvidence(
-                        material_id=material.id,
-                        category=material.category,
-                        original_filename=material.original_filename,
-                        field_name="设备必要性说明",
-                        raw_value=None,
-                        normalized_value=False,
-                        page_number=page_index + 1,
-                        quote="当前包内未提供设备必要性说明",
-                        reliable=True,
-                        reason="完整范围内确认未提供该附件",
-                    )
-                )
-                break
-        finally:
-            doc.close()
-    return extra
+
+def _absence_quotes_from_pack(manifest: MaterialManifest, settings) -> list[ReviewEvidence]:
+    return [
+        ReviewEvidence(
+            material_id=hit.material_id,
+            category=hit.category,
+            original_filename=hit.original_filename,
+            field_name="设备必要性说明",
+            raw_value=hit.quote,
+            normalized_value=False,
+            page_number=hit.page_number,
+            quote=hit.quote,
+            bbox=_to_bbox(hit.bbox),
+            reliable=True,
+            reason=hit.reason,
+        )
+        for hit in collect_attachment_absence(manifest, settings)
+    ]
 
 
 def _ethics_evidence(signals: list[EthicsSignal]) -> list[ReviewEvidence]:
