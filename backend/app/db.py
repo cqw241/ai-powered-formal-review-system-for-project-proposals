@@ -45,8 +45,9 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 def init_db() -> None:
     """Create tables if missing. Does not drop or wipe existing data."""
-    # Import models so metadata is registered.
+    # Import ORM models and additive Core tables so metadata is registered.
     from app import models  # noqa: F401
+    from app.services import review_results  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 

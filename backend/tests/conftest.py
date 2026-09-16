@@ -33,8 +33,9 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         future=True,
     )
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
-    # Import models so Material table is registered before create_all.
+    # Import ORM models and additive Core tables before create_all.
     from app import models  # noqa: F401
+    from app.services import review_results  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 
