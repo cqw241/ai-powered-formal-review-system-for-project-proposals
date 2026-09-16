@@ -187,7 +187,7 @@ uv run python -c "from app.db import init_db; init_db(); print('ok')"
 | `GET` | `/api/projects/{project_id}/reviews` | 任务列表（新到旧，含逐项结果） |
 | `GET` | `/api/projects/{project_id}/reviews/{task_id}` | 指定任务 |
 
-条目 = 内置 RULE-007 + 勾选的已启用规则。RULE-007 复用 `POST /api/projects/{id}/funding-review`，不写入 `rules` 表。PASS/FAIL → 已完成（带核对结论）；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。其它已启用规则本阶段标「未执行」并绑定当时版本快照，**不按学科类别上限判 PASS/FAIL**。无已启用规则时仍可只跑 RULE-007。现有「开始核对」入口保留。
+条目 = 内置 RULE-007 + 勾选的已启用规则。发起时先落库「运行中」任务与逐项占位，刷新可续看；结束后再写终态。RULE-007 复用 `POST /api/projects/{id}/funding-review`，不写入 `rules` 表。PASS/FAIL → 已完成（带核对结论）；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。其它已启用规则本阶段标「未执行」并绑定当时版本快照，**不按学科类别上限判 PASS/FAIL**。无已启用规则时仍可只跑 RULE-007。现有「开始核对」入口保留。POST 需要 JSON body。
 
 ## B06 使用说明
 

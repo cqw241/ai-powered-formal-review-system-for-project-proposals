@@ -203,7 +203,12 @@ export type PolicyPageText = {
 
 export type ReviewTaskStatus = 'RUNNING' | 'COMPLETED'
 
-export type ReviewItemStatus = 'COMPLETED' | 'PENDING_CONFIRMATION' | 'FAILED' | 'NOT_EXECUTED'
+export type ReviewItemStatus =
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'PENDING_CONFIRMATION'
+  | 'FAILED'
+  | 'NOT_EXECUTED'
 
 export type ReviewItem = {
   id: string

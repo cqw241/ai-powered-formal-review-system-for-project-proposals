@@ -179,6 +179,67 @@ def test_disabled_rule_rejected_unknown_rule_404(client):
     assert missing.json()["detail"] == "规则不存在"
 
 
+def test_running_task_persists_items_before_funding_finishes(client, monkeypatch):
+    uploaded = _upload_policy(client).json()
+    enabled = _enable(client, uploaded["id"], _funding_cap(uploaded, "自然科学类")["id"]).json()
+    from app.services.funding_review import run_funding_review as original_run
+
+    captured: dict = {}
+
+    def wrapper(db, project_id, **kwargs):
+        listed = client.get(f"/api/projects/{project_id}/reviews")
+        captured["http_status"] = listed.status_code
+        captured["http_body"] = listed.json()
+        return original_run(db, project_id, **kwargs)
+
+    monkeypatch.setattr("app.services.reviews.funding_service.run_funding_review", wrapper)
+    project_id = _create_project_with_materials(client)
+    created = client.post(
+        f"/api/projects/{project_id}/reviews",
+        json={"rule_ids": [enabled["id"]]},
+    )
+    assert created.status_code == 201
+    assert captured["http_status"] == 200
+    running = captured["http_body"][0]
+    assert running["status"] == "RUNNING"
+    assert [item["rule_code"] for item in running["items"]] == ["RULE-007", "RULE-005"]
+    assert running["items"][0]["status"] == "RUNNING"
+    assert running["items"][0]["check_status"] is None
+    assert "正在执行" in running["items"][0]["summary"]
+    assert running["items"][1]["status"] == "NOT_EXECUTED"
+    final = created.json()
+    assert final["id"] == running["id"]
+    assert final["status"] == "COMPLETED"
+    assert final["items"][0]["status"] == "COMPLETED"
+    assert final["items"][1]["status"] == "NOT_EXECUTED"
+    assert final["items"][1]["snapshot"]["application_amount_yuan"] == 300_000
+
+
+def test_unexpected_funding_error_does_not_leave_running_task(client, monkeypatch):
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("funding service exploded")
+
+    monkeypatch.setattr("app.services.reviews.funding_service.run_funding_review", _boom)
+    project_id = _create_project_with_materials(client)
+    created = client.post(f"/api/projects/{project_id}/reviews", json={"rule_ids": []})
+    assert created.status_code == 201
+    body = created.json()
+    assert body["status"] == "COMPLETED"
+    item = body["items"][0]
+    assert item["status"] == "FAILED"
+    assert item["check_status"] == "SYSTEM_ERROR"
+    assert "funding service exploded" in item["summary"]
+    listed = client.get(f"/api/projects/{project_id}/reviews").json()
+    assert listed[0]["status"] == "COMPLETED"
+    assert listed[0]["items"][0]["status"] == "FAILED"
+
+
+def test_create_review_requires_json_body(client):
+    project_id = _create_project(client)
+    missing = client.post(f"/api/projects/{project_id}/reviews")
+    assert missing.status_code == 422
+
+
 def test_funding_review_endpoint_still_works_alongside_workspace(client):
     project_id = _create_project_with_materials(client, "B03 回归")
     funding = client.post(f"/api/projects/{project_id}/funding-review")

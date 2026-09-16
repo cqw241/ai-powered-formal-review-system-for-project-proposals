@@ -28,13 +28,12 @@ def _get_project_or_404(db: Session, project_id: str) -> Project:
 )
 def create_review(
     project_id: str,
-    body: ReviewTaskCreate | None = None,
+    body: ReviewTaskCreate,
     db: Session = Depends(get_db),
 ) -> ReviewTaskRead:
     _get_project_or_404(db, project_id)
-    payload = body or ReviewTaskCreate()
     try:
-        task = review_service.start_review(db, project_id, payload.rule_ids)
+        task = review_service.start_review(db, project_id, body.rule_ids)
     except RuleNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except RuleNotEnabledError as exc:

@@ -41,6 +41,7 @@ class ReviewTaskStatus(str, Enum):
 
 
 class ReviewItemStatus(str, Enum):
+    RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     PENDING_CONFIRMATION = "PENDING_CONFIRMATION"
     FAILED = "FAILED"

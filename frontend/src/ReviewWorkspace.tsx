@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { listReviews, listRules, startReview } from './api'
 import type { ReviewItem, ReviewItemStatus, ReviewTask, ReviewTaskStatus, Rule } from './types'
 
@@ -8,6 +8,7 @@ const TASK_STATUS_LABEL: Record<ReviewTaskStatus, string> = {
 }
 
 const ITEM_STATUS_LABEL: Record<ReviewItemStatus, string> = {
+  RUNNING: '执行中',
   COMPLETED: '已完成',
   PENDING_CONFIRMATION: '待确认',
   FAILED: '失败',
@@ -81,18 +82,29 @@ export default function ReviewWorkspace({ projectId, onTaskCreated }: Props) {
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const selectionReady = useRef(false)
 
   const enabledRules = useMemo(() => rules.filter((item) => item.enabled), [rules])
+  const inFlightTask = useMemo(
+    () => tasks.find((item) => item.status === 'RUNNING') ?? null,
+    [tasks],
+  )
   const activeTask = useMemo(
     () => tasks.find((item) => item.id === activeId) ?? tasks[0] ?? null,
     [tasks, activeId],
   )
-  const taskStatusLabel = running
+  const displayTask = running ? inFlightTask : activeTask
+  const taskStatusLabel = running || displayTask?.status === 'RUNNING'
     ? TASK_STATUS_LABEL.RUNNING
-    : activeTask
-      ? TASK_STATUS_LABEL[activeTask.status]
+    : displayTask
+      ? TASK_STATUS_LABEL[displayTask.status]
       : '尚未审查'
-  const taskStatusClass = running ? 'running' : activeTask ? activeTask.status.toLowerCase() : 'idle'
+  const taskStatusClass =
+    running || displayTask?.status === 'RUNNING'
+      ? 'running'
+      : displayTask
+        ? displayTask.status.toLowerCase()
+        : 'idle'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -101,7 +113,11 @@ export default function ReviewWorkspace({ projectId, onTaskCreated }: Props) {
       const [ruleList, reviewList] = await Promise.all([listRules(), listReviews(projectId)])
       setRules(ruleList)
       setTasks(reviewList)
-      setSelectedIds(ruleList.filter((item) => item.enabled).map((item) => item.id))
+      const enabledIds = ruleList.filter((item) => item.enabled).map((item) => item.id)
+      if (!selectionReady.current) {
+        selectionReady.current = true
+        setSelectedIds(enabledIds)
+      }
       setActiveId((prev) => {
         if (prev && reviewList.some((item) => item.id === prev)) {
           return prev
@@ -146,13 +162,13 @@ export default function ReviewWorkspace({ projectId, onTaskCreated }: Props) {
     <div className="review-workspace" data-testid="review-workspace">
       <div className="panel-head subhead">
         <h3>审查工作台</h3>
-        <button type="button" className="ghost-btn" onClick={() => void load()} disabled={loading || running}>
+        <button type="button" className="ghost-btn" onClick={() => void load()} disabled={loading}>
           {loading ? '刷新中…' : '刷新'}
         </button>
       </div>
       <p className="muted funding-hint">
-        内置 RULE-007 始终执行。勾选已启用规则纳入本次任务；本阶段无执行器的规则显示「未执行」并绑定当时版本。无已启用规则时仍可只跑
-        RULE-007。不按学科类别上限判 PASS/FAIL。
+        内置 RULE-007 始终执行。开始后先落库「运行中」与逐项占位，刷新可续看进度；完成后再写终态。「失败」只表示执行出错；金额不一致是已完成，核对结论为「不一致」。勾选但无执行器的规则为未执行（绑定当时版本，不按上限裁决）。无已启用规则时仍可只跑
+        RULE-007。
       </p>
 
       <div className="rule-picker" data-testid="review-rule-picker">
@@ -214,7 +230,7 @@ export default function ReviewWorkspace({ projectId, onTaskCreated }: Props) {
         <div className="review-history" data-testid="review-task-history">
           <span className="muted">历史任务</span>
           {tasks.map((task, index) => {
-            const active = task.id === activeTask?.id
+            const active = task.id === displayTask?.id
             return (
               <button
                 key={task.id}
@@ -230,23 +246,30 @@ export default function ReviewWorkspace({ projectId, onTaskCreated }: Props) {
         </div>
       ) : null}
 
-      {loading && !activeTask ? <p className="muted">正在加载审查任务…</p> : null}
+      {loading && !displayTask ? <p className="muted">正在加载审查任务…</p> : null}
 
-      {!loading && !activeTask && !running ? (
+      {running && !displayTask ? (
+        <div className="empty-state compact" data-testid="review-running-placeholder">
+          <strong>审查进行中</strong>
+          <p>任务已开始。点「刷新」可查看已落库的运行中条目，不会继续显示上一次结果。</p>
+        </div>
+      ) : null}
+
+      {!loading && !displayTask && !running ? (
         <div className="empty-state compact">
           <strong>尚未发起审查</strong>
           <p>选择启用规则后点击「开始审查」。刷新页面后仍可查看已完成的任务。</p>
         </div>
       ) : null}
 
-      {activeTask ? (
-        <div className="review-task" data-testid={`review-task-${activeTask.id}`}>
+      {displayTask ? (
+        <div className="review-task" data-testid={`review-task-${displayTask.id}`}>
           <p className="muted">
-            任务 {formatDateTime(activeTask.created_at)} · {TASK_STATUS_LABEL[activeTask.status]} ·{' '}
-            {activeTask.items.length} 项
+            任务 {formatDateTime(displayTask.created_at)} · {TASK_STATUS_LABEL[displayTask.status]} ·{' '}
+            {displayTask.items.length} 项
           </p>
           <ul className="review-item-list">
-            {activeTask.items.map((item) => (
+            {displayTask.items.map((item) => (
               <li
                 key={item.id}
                 className={`review-item status-item-${item.status.toLowerCase()}`}

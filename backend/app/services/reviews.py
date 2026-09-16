@@ -4,26 +4,28 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
+    FundingReview,
     FundingReviewStatus,
     ReviewItem,
     ReviewItemStatus,
     ReviewTask,
     ReviewTaskStatus,
     Rule,
+    RuleVersion,
     utc_now,
 )
-from app.schemas import BoundRuleSnapshot, ReviewItemRead, ReviewTaskRead
+from app.schemas import BoundRuleSnapshot, FundingFinding, ReviewItemRead, ReviewTaskRead
 from app.services import funding_review as funding_service
 from app.services.rules import bound_snapshot, current_version, load_rule
 
 RULE_007 = "RULE-007"
 RULE_007_NAME = "申请经费跨文件一致性"
+RUNNING_SUMMARY = "正在执行申请经费核对"
 NOT_EXECUTED_SUMMARY = (
     "本阶段无执行器，已绑定当时版本快照；不按学科类别上限判 PASS/FAIL。"
 )
@@ -40,69 +42,17 @@ class RuleNotEnabledError(ValueError):
 
 
 def start_review(db: Session, project_id: str, rule_ids: list[str]) -> ReviewTask:
-    """Create a persisted task, run RULE-007 via funding-review, mark others 未执行."""
+    """Persist a RUNNING task with items, run RULE-007, then store the terminal states."""
     selected = _load_selected_rules(db, rule_ids)
+    task_id = _create_running_task(db, project_id, selected)
+    try:
+        funding = funding_service.run_funding_review(db, project_id)
+    except Exception as exc:  # noqa: BLE001 — workspace item FAILED, do not leave RUNNING
+        _complete_with_failure(db, project_id, task_id, f"申请经费核对失败：{exc}")
+        return _require_task(db, project_id, task_id)
 
-    task = ReviewTask(
-        id=str(uuid.uuid4()),
-        project_id=project_id,
-        status=ReviewTaskStatus.RUNNING.value,
-    )
-    db.add(task)
-    db.commit()
-
-    funding = funding_service.run_funding_review(db, project_id)
-    application_amount = _application_amount(funding)
-    check_status = FundingReviewStatus(funding.status)
-    item_status, default_summary = _map_funding_status(check_status)
-    payload = json.loads(funding.payload_json)
-    summary = str(payload.get("reason") or default_summary)
-
-    items = [
-        ReviewItem(
-            id=str(uuid.uuid4()),
-            task_id=task.id,
-            sort_order=0,
-            rule_code=RULE_007,
-            source_rule_id=None,
-            version_id=None,
-            version_number=None,
-            name=RULE_007_NAME,
-            status=item_status.value,
-            check_status=check_status.value,
-            summary=summary,
-            snapshot_json=None,
-            funding_review_id=funding.id,
-        )
-    ]
-    for index, (rule, version) in enumerate(selected, start=1):
-        snapshot = bound_snapshot(rule, version, application_amount_yuan=application_amount)
-        items.append(
-            ReviewItem(
-                id=str(uuid.uuid4()),
-                task_id=task.id,
-                sort_order=index,
-                rule_code=rule.rule_code,
-                source_rule_id=rule.id,
-                version_id=version.id,
-                version_number=version.version_number,
-                name=version.name or rule.name,
-                status=ReviewItemStatus.NOT_EXECUTED.value,
-                check_status=None,
-                summary=NOT_EXECUTED_SUMMARY,
-                snapshot_json=json.dumps(snapshot, ensure_ascii=False),
-                funding_review_id=None,
-            )
-        )
-
-    task.status = ReviewTaskStatus.COMPLETED.value
-    task.updated_at = utc_now()
-    db.add(task)
-    db.add_all(items)
-    db.commit()
-    loaded = get_review_task(db, project_id, task.id)
-    assert loaded is not None
-    return loaded
+    _complete_with_funding(db, project_id, task_id, funding)
+    return _require_task(db, project_id, task_id)
 
 
 def list_review_tasks(db: Session, project_id: str) -> list[ReviewTask]:
@@ -136,6 +86,12 @@ def to_review_task_read(task: ReviewTask) -> ReviewTaskRead:
     )
 
 
+def _require_task(db: Session, project_id: str, task_id: str) -> ReviewTask:
+    loaded = get_review_task(db, project_id, task_id)
+    assert loaded is not None
+    return loaded
+
+
 def _to_item_read(item: ReviewItem) -> ReviewItemRead:
     snapshot = None
     if item.snapshot_json:
@@ -157,8 +113,8 @@ def _to_item_read(item: ReviewItem) -> ReviewItemRead:
     )
 
 
-def _load_selected_rules(db: Session, rule_ids: list[str]) -> list[tuple[Rule, Any]]:
-    selected: list[tuple[Rule, Any]] = []
+def _load_selected_rules(db: Session, rule_ids: list[str]) -> list[tuple[Rule, RuleVersion]]:
+    selected: list[tuple[Rule, RuleVersion]] = []
     seen: set[str] = set()
     for rule_id in rule_ids:
         cleaned = rule_id.strip()
@@ -174,6 +130,103 @@ def _load_selected_rules(db: Session, rule_ids: list[str]) -> list[tuple[Rule, A
     return selected
 
 
+def _create_running_task(
+    db: Session,
+    project_id: str,
+    selected: list[tuple[Rule, RuleVersion]],
+) -> str:
+    task = ReviewTask(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        status=ReviewTaskStatus.RUNNING.value,
+    )
+    items = [
+        ReviewItem(
+            id=str(uuid.uuid4()),
+            task_id=task.id,
+            sort_order=0,
+            rule_code=RULE_007,
+            source_rule_id=None,
+            version_id=None,
+            version_number=None,
+            name=RULE_007_NAME,
+            status=ReviewItemStatus.RUNNING.value,
+            check_status=None,
+            summary=RUNNING_SUMMARY,
+            snapshot_json=None,
+            funding_review_id=None,
+        )
+    ]
+    for index, (rule, version) in enumerate(selected, start=1):
+        snapshot = bound_snapshot(rule, version, application_amount_yuan=None)
+        items.append(
+            ReviewItem(
+                id=str(uuid.uuid4()),
+                task_id=task.id,
+                sort_order=index,
+                rule_code=rule.rule_code,
+                source_rule_id=rule.id,
+                version_id=version.id,
+                version_number=version.version_number,
+                name=version.name or rule.name,
+                status=ReviewItemStatus.NOT_EXECUTED.value,
+                check_status=None,
+                summary=NOT_EXECUTED_SUMMARY,
+                snapshot_json=json.dumps(snapshot, ensure_ascii=False),
+                funding_review_id=None,
+            )
+        )
+    db.add(task)
+    db.add_all(items)
+    db.commit()
+    return task.id
+
+
+def _complete_with_funding(
+    db: Session,
+    project_id: str,
+    task_id: str,
+    funding: FundingReview,
+) -> None:
+    task = _require_task(db, project_id, task_id)
+    read = funding_service.to_funding_review_read(funding)
+    item_status, default_summary = _map_funding_status(read.status)
+    rule007 = _rule007_item(task)
+    rule007.status = item_status.value
+    rule007.check_status = read.status.value
+    rule007.summary = read.finding.reason or default_summary
+    rule007.funding_review_id = funding.id
+    application_amount = _application_amount(read.finding)
+    for item in task.items:
+        if item.rule_code == RULE_007 or not item.snapshot_json:
+            continue
+        snapshot = json.loads(item.snapshot_json)
+        snapshot["application_amount_yuan"] = application_amount
+        item.snapshot_json = json.dumps(snapshot, ensure_ascii=False)
+    task.status = ReviewTaskStatus.COMPLETED.value
+    task.updated_at = utc_now()
+    db.commit()
+
+
+def _complete_with_failure(db: Session, project_id: str, task_id: str, summary: str) -> None:
+    db.rollback()
+    task = _require_task(db, project_id, task_id)
+    rule007 = _rule007_item(task)
+    rule007.status = ReviewItemStatus.FAILED.value
+    rule007.check_status = FundingReviewStatus.SYSTEM_ERROR.value
+    rule007.summary = summary
+    task.status = ReviewTaskStatus.COMPLETED.value
+    task.updated_at = utc_now()
+    db.commit()
+
+
+def _rule007_item(task: ReviewTask) -> ReviewItem:
+    for item in task.items:
+        if item.rule_code == RULE_007:
+            return item
+    raise LookupError("审查任务缺少 RULE-007 条目")
+
+
 def _map_funding_status(status: FundingReviewStatus) -> tuple[ReviewItemStatus, str]:
     if status in (FundingReviewStatus.PASS, FundingReviewStatus.FAIL):
         return ReviewItemStatus.COMPLETED, "已完成申请经费核对"
@@ -182,9 +235,8 @@ def _map_funding_status(status: FundingReviewStatus) -> tuple[ReviewItemStatus, 
     return ReviewItemStatus.FAILED, "申请经费核对失败"
 
 
-def _application_amount(funding) -> int | None:
-    payload = json.loads(funding.payload_json)
-    left = payload.get("left") or {}
-    if left.get("reliable") and left.get("amount_yuan") is not None:
-        return int(left["amount_yuan"])
+def _application_amount(finding: FundingFinding) -> int | None:
+    left = finding.left
+    if left is not None and left.reliable and left.amount_yuan is not None:
+        return int(left.amount_yuan)
     return None
