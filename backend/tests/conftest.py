@@ -18,9 +18,12 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     db_path = tmp_path / "test.db"
     materials_path = tmp_path / "materials"
     materials_path.mkdir(parents=True, exist_ok=True)
+    policies_path = tmp_path / "policies"
+    policies_path.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
     monkeypatch.setenv("MATERIALS_DIR", str(materials_path))
+    monkeypatch.setenv("POLICIES_DIR", str(policies_path))
     get_settings.cache_clear()
 
     engine = create_engine(

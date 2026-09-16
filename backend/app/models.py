@@ -1,4 +1,4 @@
-"""ORM models for projects, PDF materials, and funding reviews."""
+"""ORM models for projects, PDF materials, funding reviews, and policies."""
 
 from __future__ import annotations
 
@@ -33,6 +33,12 @@ class FundingReviewStatus(str, Enum):
     FAIL = "FAIL"
     NEED_HUMAN_REVIEW = "NEED_HUMAN_REVIEW"
     SYSTEM_ERROR = "SYSTEM_ERROR"
+
+
+class PolicyStatus(str, Enum):
+    PROCESSING = "PROCESSING"
+    READY = "READY"
+    FAILED = "FAILED"
 
 
 class Project(Base):
@@ -103,3 +109,66 @@ class FundingReview(Base):
     )
 
     project: Mapped[Project] = relationship(back_populates="funding_reviews")
+
+
+class PolicyDocument(Base):
+    """Uploaded policy PDF (e.g. batch declaration guide)."""
+
+    __tablename__ = "policies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=PolicyStatus.PROCESSING.value)
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    candidates: Mapped[list[PolicyCandidate]] = relationship(
+        back_populates="policy",
+        cascade="all, delete-orphan",
+        order_by="PolicyCandidate.sort_order",
+    )
+
+
+class PolicyCandidate(Base):
+    """Editable draft requirement extracted from a policy. Not an enabled rule."""
+
+    __tablename__ = "policy_candidates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    policy_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("policies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    amount_raw: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    amount_yuan: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    amount_unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    comparator: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    source_clause: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    policy: Mapped[PolicyDocument] = relationship(back_populates="candidates")

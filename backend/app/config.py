@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./backend/data/app.db"
     cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
     materials_dir: str = "./backend/data/materials"
+    policies_dir: str = "./backend/data/policies"
     upload_max_bytes: int = Field(default=20 * 1024 * 1024, gt=0)
 
     llm_base_url: str = ""
@@ -59,6 +60,12 @@ class Settings(BaseSettings):
 
     def resolve_materials_dir(self) -> Path:
         path = Path(self.materials_dir)
+        if not path.is_absolute():
+            path = (REPO_ROOT / path).resolve()
+        return path
+
+    def resolve_policies_dir(self) -> Path:
+        path = Path(self.policies_dir)
         if not path.is_absolute():
             path = (REPO_ROOT / path).resolve()
         return path

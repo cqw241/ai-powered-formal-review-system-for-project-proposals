@@ -4,6 +4,11 @@ import type {
   Material,
   MaterialCategory,
   PageText,
+  PolicyCandidate,
+  PolicyCandidateUpdate,
+  PolicyDetail,
+  PolicyPageText,
+  PolicySummary,
   Project,
 } from './types'
 
@@ -112,4 +117,66 @@ export async function getFundingReview(projectId: string): Promise<FundingReview
     throw new Error(await parseError(response))
   }
   return response.json() as Promise<FundingReview>
+}
+
+export async function listPolicies(): Promise<PolicySummary[]> {
+  const response = await fetch('/api/policies')
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<PolicySummary[]>
+}
+
+export async function uploadPolicy(file: File): Promise<PolicyDetail> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await fetch('/api/policies', {
+    method: 'POST',
+    body: form,
+  })
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<PolicyDetail>
+}
+
+export async function getPolicy(policyId: string): Promise<PolicyDetail> {
+  const response = await fetch(`/api/policies/${encodeURIComponent(policyId)}`)
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<PolicyDetail>
+}
+
+export async function getPolicyPageText(policyId: string, pageNumber: number): Promise<PolicyPageText> {
+  const response = await fetch(
+    `/api/policies/${encodeURIComponent(policyId)}/pages/${pageNumber}/text`,
+  )
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<PolicyPageText>
+}
+
+export function policyPageImageUrl(policyId: string, pageNumber: number): string {
+  return `/api/policies/${encodeURIComponent(policyId)}/pages/${pageNumber}/image`
+}
+
+export async function updatePolicyCandidate(
+  policyId: string,
+  candidateId: string,
+  patch: PolicyCandidateUpdate,
+): Promise<PolicyCandidate> {
+  const response = await fetch(
+    `/api/policies/${encodeURIComponent(policyId)}/candidates/${encodeURIComponent(candidateId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    },
+  )
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<PolicyCandidate>
 }
