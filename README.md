@@ -1,6 +1,6 @@
 # 规证AI
 
-高校项目申报材料形式审查辅助应用。当前分支做 **W3 审查接线**：在一次审查任务中运行 RULE-002/003/004/005/006/007/010（名称、负责人、周期、经费上限、预算合计、申请经费一致、签署日期）。
+高校项目申报材料形式审查辅助应用。当前分支做 **W4 材料要求**：在一次审查任务中运行 RULE-001/008/009（必需材料、大额设备附件、伦理适用性），并保留 W3 的名称、负责人、周期、经费上限、预算合计、申请经费一致和签署日期核对。
 
 > 本版本仅供本地开发。未实现登录与项目权限，**不要当作可安全公开部署的版本**。
 
@@ -39,6 +39,8 @@ backend/
     services/budget_review.py
     services/date_extract.py
     services/date_review.py
+    services/material_extract.py
+    services/material_review.py
     services/pdf.py
     review_contract.py      # W3 执行器契约
     llm/                # 云端图像调用（文本不足时可选回退）
@@ -198,14 +200,14 @@ uv run python -c "from app.db import init_db; init_db(); print('ok')"
 | `GET` | `/api/projects/{project_id}/reviews` | 任务列表（新到旧，含逐项结果） |
 | `GET` | `/api/projects/{project_id}/reviews/{task_id}` | 指定任务 |
 
-条目 = 内置 RULE-002/003/004/006/007/010 + 勾选的已启用规则（通常是 RULE-005）。发起时先落库「运行中」任务与逐项占位，刷新可续看；结束后再写终态并写入 `review_item_results`。RULE-007 仍复用经费核对。PASS/FAIL → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。现有「开始核对」入口保留。POST 需要 JSON body。
+条目 = 内置 RULE-001/002/003/004/006/007/008/009/010 + 勾选的已启用规则（通常是 RULE-005）。发起时先落库「运行中」任务与逐项占位，刷新可续看；结束后再写终态并写入 `review_item_results`。RULE-007 仍复用经费核对。PASS/FAIL/NOT_APPLICABLE → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。现有「开始核对」入口保留。POST 需要 JSON body。
 
 ## B06 / W3 使用说明
 
 1. 顶部导航进入「政策与候选要求」，上传模拟申报指南 PDF，将对应类别的经费上限启为规则。
 2. 打开项目，上传申报书、预算表和承诺书。
 3. 在「审查工作台」确认内置规则已锁定，勾选 RULE-005，点击「开始审查」。
-4. 同一任务中查看名称、负责人、周期、上限、预算合计、申请经费一致和签署日期的逐项结果；点击证据可打开对应页。
+4. 同一任务中查看必需材料、名称、负责人、周期、上限、预算合计、申请经费一致、设备附件、伦理适用性和签署日期的逐项结果；点击证据可打开对应页。
 5. 刷新后再打开该项目，任务与逐项状态仍在。
 6. 下方「开始核对」仍可单独跑 RULE-007。
 
@@ -236,29 +238,32 @@ cd frontend
 npm run build
 ```
 
-## W3 一次审查（本分支）
+## W3 / W4 一次审查（本分支）
 
 开始审查后，同一任务内置并执行：
 
 | 规则 | 执行器 | 行为 |
 |---|---|---|
+| RULE-001 | `execute_material_rule` | 申报书、预算表、承诺书齐全且可读；上传未完成不判缺件 |
 | RULE-002 | `execute_identity_rule` | 三类材料项目名称，Unicode 空白归一后比较 |
 | RULE-003 | `execute_identity_rule` | 三类材料负责人姓名 |
 | RULE-004 | `execute_date_rule` | 执行期窗口与 ≤24 个月 |
 | RULE-005 | `execute_budget_rule` | 分类经费上限（勾选已启用规则；按项目类别选用对应快照） |
 | RULE-006 | `execute_budget_rule` | 预算科目合计，容差 1 元 |
 | RULE-007 | 既有经费核对 | 申报书申请经费 vs 预算申请总额 |
+| RULE-008 | `execute_material_rule` | 单台/套 ≥5 万元须有设备必要性说明；否则不适用 |
+| RULE-009 | `execute_material_rule` | 数据/伦理适用性；不清时列出依据与待确认问题 |
 | RULE-010 | `execute_date_rule` | 承诺书签署日期 |
 
-结果写入 `review_item_results`，工作台展示摘要与可点击原文证据。PASS/FAIL → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。无已启用 RULE-005 时仍跑其余内置规则。B11 通用双文档对照与 B12 人工处置不在本分支。
+结果写入 `review_item_results`，工作台展示摘要与可点击原文证据。PASS/FAIL/NOT_APPLICABLE → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。无已启用 RULE-005 时仍跑其余内置规则。B11 通用双文档对照与 B12 人工处置不在本分支。
 
-## B10 接续入口
+## B12 接续入口
 
 - 审查任务：`POST/GET /api/projects/{id}/reviews`
 - 通用结果：`review_item_results` + `RuleExecutionResult.evidence`
 - 已启用规则：`GET /api/rules`
 
-B10 再做必需材料与条件附件（RULE-001/008/009）；**不要**在本分支提前实现。
+B12 再做确认问题、修正字段、标记不适用（依赖 B10/B11）。**不要**在本分支提前实现。
 
 ## 验收记录
 
@@ -271,6 +276,7 @@ B10 再做必需材料与条件附件（RULE-001/008/009）；**不要**在本�
 - [B07 实现与验收记录](docs/competition-review/B07_实现与验收记录.md)
 - [B08 实现与验收记录](docs/competition-review/B08_实现与验收记录.md)
 - [W3 接线与验收记录](docs/competition-review/W3_接线与验收记录.md)
+- [B10 实现与验收记录](docs/competition-review/B10_实现与验收记录.md)
 
 ## 可选：安装环境排障
 

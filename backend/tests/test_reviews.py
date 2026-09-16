@@ -61,7 +61,17 @@ def _item(body: dict, rule_code: str) -> dict:
     return matches[0]
 
 
-BUILTIN_CODES = ["RULE-002", "RULE-003", "RULE-004", "RULE-006", "RULE-007", "RULE-010"]
+BUILTIN_CODES = [
+    "RULE-001",
+    "RULE-002",
+    "RULE-003",
+    "RULE-004",
+    "RULE-006",
+    "RULE-007",
+    "RULE-008",
+    "RULE-009",
+    "RULE-010",
+]
 
 
 def test_review_without_enabled_rules_runs_builtins(client):
@@ -106,7 +116,18 @@ def test_selected_rule_is_not_executed_and_binds_version_snapshot(client):
     body = created.json()
     assert body["status"] == "COMPLETED"
     codes = [item["rule_code"] for item in body["items"]]
-    assert codes == ["RULE-002", "RULE-003", "RULE-004", "RULE-005", "RULE-006", "RULE-007", "RULE-010"]
+    assert codes == [
+        "RULE-001",
+        "RULE-002",
+        "RULE-003",
+        "RULE-004",
+        "RULE-005",
+        "RULE-006",
+        "RULE-007",
+        "RULE-008",
+        "RULE-009",
+        "RULE-010",
+    ]
     rule007 = _item(body, "RULE-007")
     selected = _item(body, "RULE-005")
     assert rule007["status"] == "COMPLETED"

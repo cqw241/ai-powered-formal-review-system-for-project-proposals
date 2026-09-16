@@ -66,6 +66,7 @@ def _seed_item(db: Session) -> ReviewItem:
         ("PASS", ReviewItemStatus.COMPLETED),
         ("FAIL", ReviewItemStatus.COMPLETED),
         ("NEED_HUMAN_REVIEW", ReviewItemStatus.PENDING_CONFIRMATION),
+        ("NOT_APPLICABLE", ReviewItemStatus.COMPLETED),
         ("SYSTEM_ERROR", ReviewItemStatus.FAILED),
     ],
 )
