@@ -1,4 +1,11 @@
-import type { ApiErrorBody, Material, MaterialCategory, PageText, Project } from './types'
+import type {
+  ApiErrorBody,
+  FundingReview,
+  Material,
+  MaterialCategory,
+  PageText,
+  Project,
+} from './types'
 
 async function parseError(response: Response): Promise<string> {
   try {
@@ -84,4 +91,25 @@ export async function getPageText(materialId: string, pageNumber: number): Promi
 
 export function pageImageUrl(materialId: string, pageNumber: number): string {
   return `/api/materials/${encodeURIComponent(materialId)}/pages/${pageNumber}/image`
+}
+
+export async function runFundingReview(projectId: string): Promise<FundingReview> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/funding-review`, {
+    method: 'POST',
+  })
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<FundingReview>
+}
+
+export async function getFundingReview(projectId: string): Promise<FundingReview | null> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/funding-review`)
+  if (response.status === 404) {
+    return null
+  }
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<FundingReview>
 }

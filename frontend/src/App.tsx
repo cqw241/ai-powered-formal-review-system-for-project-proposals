@@ -1,14 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createProject,
+  getFundingReview,
   getPageText,
   getProject,
   listMaterials,
   listProjects,
   pageImageUrl,
+  runFundingReview,
   uploadMaterial,
 } from './api'
-import type { Material, MaterialCategory, Project } from './types'
+import type {
+  EvidenceBBox,
+  FundingReview,
+  FundingSide,
+  Material,
+  MaterialCategory,
+  Project,
+} from './types'
 import './App.css'
 
 type View =
@@ -33,6 +42,27 @@ const STATUS_LABEL: Record<Material['status'], string> = {
   PROCESSING: '处理中',
   READY: '就绪',
   FAILED: '失败',
+}
+
+const REVIEW_STATUS_LABEL: Record<string, string> = {
+  PASS: '一致',
+  FAIL: '不一致',
+  NEED_HUMAN_REVIEW: '待人工确认',
+  SYSTEM_ERROR: '系统错误',
+}
+
+function formatYuan(value: number | null | undefined): string {
+  if (value == null) {
+    return '未知（非 0）'
+  }
+  return `${value.toLocaleString('zh-CN')} 元`
+}
+
+function sideLabel(side: FundingSide | null, fallback: string): string {
+  if (!side) {
+    return fallback
+  }
+  return side.field_label || side.original_filename || fallback
 }
 
 function formatDateTime(value: string): string {
@@ -88,6 +118,16 @@ export default function App() {
   const [pageText, setPageText] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [highlight, setHighlight] = useState<{
+    materialId: string
+    pageNumber: number
+    bbox: EvidenceBBox
+  } | null>(null)
+
+  const [fundingReview, setFundingReview] = useState<FundingReview | null>(null)
+  const [fundingLoading, setFundingLoading] = useState(false)
+  const [fundingError, setFundingError] = useState<string | null>(null)
+  const [fundingRunning, setFundingRunning] = useState(false)
 
   const isActiveDetail = useCallback((projectId: string) => {
     const current = viewRef.current
@@ -135,6 +175,34 @@ export default function App() {
     [isActiveDetail],
   )
 
+  const loadFundingReview = useCallback(
+    async (projectId: string) => {
+      if (isActiveDetail(projectId)) {
+        setFundingLoading(true)
+        setFundingError(null)
+      }
+      try {
+        const data = await getFundingReview(projectId)
+        if (isActiveDetail(projectId)) {
+          setFundingReview(data)
+          setFundingError(null)
+        }
+        return data
+      } catch (error) {
+        if (isActiveDetail(projectId)) {
+          setFundingError(error instanceof Error ? error.message : '加载经费核对结果失败')
+          setFundingReview(null)
+        }
+        return null
+      } finally {
+        if (isActiveDetail(projectId)) {
+          setFundingLoading(false)
+        }
+      }
+    },
+    [isActiveDetail],
+  )
+
   useEffect(() => {
     void loadProjects()
   }, [loadProjects])
@@ -160,8 +228,13 @@ export default function App() {
     setUploadNotice(null)
     setUploadFiles(null)
     setUploading(false)
+    setHighlight(null)
+    setFundingReview(null)
+    setFundingError(null)
+    setFundingLoading(false)
+    setFundingRunning(false)
 
-    void Promise.all([getProject(projectId), loadMaterials(projectId)])
+    void Promise.all([getProject(projectId), loadMaterials(projectId), loadFundingReview(projectId)])
       .then(([project]) => {
         if (!cancelled && isActiveDetail(projectId)) {
           setDetail(project)
@@ -181,7 +254,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [view, loadMaterials, isActiveDetail])
+  }, [view, loadMaterials, loadFundingReview, isActiveDetail])
 
   const selectedMaterial = useMemo(
     () => materials.find((item) => item.id === selectedId) ?? null,
@@ -337,10 +410,55 @@ export default function App() {
   function openMaterial(material: Material) {
     setSelectedId(material.id)
     setPageNumber(1)
+    setHighlight(null)
     // Non-READY materials only show status/error; preview effect will not fetch pages.
   }
 
+  function openEvidence(side: FundingSide | null) {
+    if (!side?.material_id || !side.page_number) {
+      return
+    }
+    setSelectedId(side.material_id)
+    setPageNumber(side.page_number)
+    setHighlight(
+      side.bbox
+        ? {
+            materialId: side.material_id,
+            pageNumber: side.page_number,
+            bbox: side.bbox,
+          }
+        : null,
+    )
+  }
+
+  async function handleFundingReview() {
+    if (!detail) {
+      return
+    }
+    const projectId = detail.id
+    setFundingRunning(true)
+    setFundingError(null)
+    try {
+      const result = await runFundingReview(projectId)
+      if (!isActiveDetail(projectId)) {
+        return
+      }
+      setFundingReview(result)
+    } catch (error) {
+      if (isActiveDetail(projectId)) {
+        setFundingError(error instanceof Error ? error.message : '申请经费核对失败')
+      }
+    } finally {
+      if (isActiveDetail(projectId)) {
+        setFundingRunning(false)
+      }
+    }
+  }
+
   const totalPages = previewMaterial?.page_count ?? 0
+  const finding = fundingReview?.finding ?? null
+  const reviewStatus = fundingReview?.status ?? null
+  const canRunFunding = Boolean(detail && !fundingRunning)
 
   return (
     <div className="app-shell">
@@ -350,7 +468,7 @@ export default function App() {
           <h1>规证AI</h1>
         </div>
         <p className="header-note">
-          本阶段支持项目持久化与 PDF 材料上传预览。尚未开始审查的项目不会显示为“审查通过”。
+          本阶段支持 PDF 上传预览与申请经费核对（RULE-007）。尚未核对的项目不会显示为“审查通过”。
         </p>
       </header>
 
@@ -454,11 +572,137 @@ export default function App() {
                   <div>
                     <dt>审查状态</dt>
                     <dd>
-                      <span className="status-chip">尚未审查</span>
-                      <span className="muted inline-note">B03 才会接入金额核对与问题卡。</span>
+                      {reviewStatus ? (
+                        <span className={`status-chip status-review-${String(reviewStatus).toLowerCase()}`}>
+                          {REVIEW_STATUS_LABEL[reviewStatus] ?? reviewStatus}
+                        </span>
+                      ) : (
+                        <span className="status-chip">尚未审查</span>
+                      )}
+                      <span className="muted inline-note">当前仅核对申报书与预算表的申请经费。</span>
                     </dd>
                   </div>
                 </dl>
+
+                <div className="funding-section">
+                  <div className="panel-head subhead">
+                    <h3>申请经费核对</h3>
+                    <button
+                      type="button"
+                      onClick={() => void handleFundingReview()}
+                      disabled={!canRunFunding}
+                    >
+                      {fundingRunning ? '核对中…' : fundingReview ? '重新核对' : '开始核对'}
+                    </button>
+                  </div>
+                  <p className="muted funding-hint">
+                    提取申报书「申请经费」与预算表「申请总额」，统一换算为元后比较；不与「项目总经费」混淆。未知值不会当作 0。
+                  </p>
+                  {fundingError ? (
+                    <p className="msg error" role="alert">
+                      {fundingError}
+                    </p>
+                  ) : null}
+                  {fundingLoading && !fundingReview ? (
+                    <p className="muted">正在加载已有核对结果…</p>
+                  ) : null}
+                  {!fundingLoading && !fundingReview && !fundingError ? (
+                    <div className="empty-state compact">
+                      <strong>尚未核对申请经费</strong>
+                      <p>请先上传申报书与预算表 PDF，再点击「开始核对」。</p>
+                    </div>
+                  ) : null}
+                  {finding ? (
+                    <article
+                      className={`issue-card status-review-${String(finding.status).toLowerCase()}`}
+                      data-testid="funding-issue-card"
+                    >
+                      <header className="issue-card-head">
+                        <div>
+                          <p className="eyebrow">RULE-007 · 问题卡</p>
+                          <h4>申请经费跨文件一致性</h4>
+                        </div>
+                        <span className={`status-chip status-review-${String(finding.status).toLowerCase()}`}>
+                          {REVIEW_STATUS_LABEL[finding.status] ?? finding.status}
+                        </span>
+                      </header>
+
+                      <dl className="issue-grid">
+                        <div>
+                          <dt>检查字段</dt>
+                          <dd>{finding.check_field}</dd>
+                        </div>
+                        <div>
+                          <dt>当前状态</dt>
+                          <dd>{REVIEW_STATUS_LABEL[finding.status] ?? finding.status}</dd>
+                        </div>
+                        <div>
+                          <dt>差额</dt>
+                          <dd>
+                            {finding.difference_yuan == null
+                              ? '无（待确认/不可比）'
+                              : formatYuan(finding.difference_yuan)}
+                          </dd>
+                        </div>
+                        <div className="issue-reason">
+                          <dt>原因</dt>
+                          <dd>{finding.reason}</dd>
+                        </div>
+                      </dl>
+
+                      <div className="issue-sides">
+                        {(['left', 'right'] as const).map((key) => {
+                          const side = finding[key]
+                          const title = key === 'left' ? '申报书侧' : '预算表侧'
+                          const clickable = Boolean(side?.material_id && side.page_number)
+                          return (
+                            <div key={key} className="issue-side">
+                              <h5>{title}</h5>
+                              <p className="issue-side-meta">
+                                {side?.original_filename ?? '未提取'}
+                                {side?.page_number ? ` · 第 ${side.page_number} 页` : ''}
+                              </p>
+                              <dl>
+                                <div>
+                                  <dt>字段</dt>
+                                  <dd>{sideLabel(side, '申请经费')}</dd>
+                                </div>
+                                <div>
+                                  <dt>原始值</dt>
+                                  <dd>
+                                    {clickable ? (
+                                      <button
+                                        type="button"
+                                        className="evidence-link"
+                                        onClick={() => openEvidence(side)}
+                                        title="打开对应文件与页码并高亮"
+                                      >
+                                        {side?.raw_value ?? '无法读取'}
+                                      </button>
+                                    ) : (
+                                      <span>{side?.raw_value ?? '无法读取'}</span>
+                                    )}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>规范化金额</dt>
+                                  <dd>{formatYuan(side?.normalized_amount_yuan ?? side?.amount_yuan)}</dd>
+                                </div>
+                                <div>
+                                  <dt>单位</dt>
+                                  <dd>
+                                    原文 {side?.raw_unit || side?.display_unit || '未知'}
+                                    {side?.normalized_unit ? ` → ${side.normalized_unit}` : ''}
+                                  </dd>
+                                </div>
+                              </dl>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </article>
+                  ) : null}
+                </div>
 
                 <div className="materials-section">
                   <div className="panel-head subhead">
@@ -596,12 +840,30 @@ export default function App() {
                       {previewError ? <p className="msg error" role="alert">{previewError}</p> : null}
 
                       <div className="preview-image-wrap">
-                        <img
-                          key={`${previewMaterial.id}-${pageNumber}`}
-                          src={pageImageUrl(previewMaterial.id, pageNumber)}
-                          alt={`${previewMaterial.original_filename} 第 ${pageNumber} 页`}
-                          className="preview-image"
-                        />
+                        <div className="preview-image-frame">
+                          <img
+                            key={`${previewMaterial.id}-${pageNumber}`}
+                            src={pageImageUrl(previewMaterial.id, pageNumber)}
+                            alt={`${previewMaterial.original_filename} 第 ${pageNumber} 页`}
+                            className="preview-image"
+                          />
+                          {highlight &&
+                          highlight.materialId === previewMaterial.id &&
+                          highlight.pageNumber === pageNumber &&
+                          highlight.bbox.page_width > 0 &&
+                          highlight.bbox.page_height > 0 ? (
+                            <div
+                              className="evidence-highlight"
+                              style={{
+                                left: `${(highlight.bbox.x0 / highlight.bbox.page_width) * 100}%`,
+                                top: `${(highlight.bbox.y0 / highlight.bbox.page_height) * 100}%`,
+                                width: `${((highlight.bbox.x1 - highlight.bbox.x0) / highlight.bbox.page_width) * 100}%`,
+                                height: `${((highlight.bbox.y1 - highlight.bbox.y0) / highlight.bbox.page_height) * 100}%`,
+                              }}
+                              data-testid="evidence-highlight"
+                            />
+                          ) : null}
+                        </div>
                       </div>
 
                       <div className="preview-text">

@@ -77,3 +77,52 @@ class PageTextResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     llm_configured: bool
+
+
+class EvidenceBBox(BaseModel):
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    page_width: float
+    page_height: float
+
+
+class FundingSide(BaseModel):
+    material_id: str | None = None
+    category: str | None = None
+    original_filename: str | None = None
+    field_kind: str | None = None
+    field_label: str | None = None
+    raw_value: str | None = None
+    raw_unit: str | None = None
+    amount_yuan: int | None = None
+    normalized_amount_yuan: int | None = None
+    normalized_unit: str | None = None
+    display_unit: str | None = None
+    page_number: int | None = None
+    quote: str | None = None
+    bbox: EvidenceBBox | None = None
+    reliable: bool | None = None
+    reason: str | None = None
+    source: str | None = None
+
+
+class FundingFinding(BaseModel):
+    rule_id: str
+    check_field: str
+    status: str
+    reason: str
+    difference_yuan: int | None = None
+    left: FundingSide | None = None
+    right: FundingSide | None = None
+    compared_at: str | None = None
+
+
+class FundingReviewRead(BaseModel):
+    id: str
+    project_id: str
+    rule_id: str
+    status: str
+    created_at: str
+    finding: FundingFinding

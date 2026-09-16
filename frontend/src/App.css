@@ -378,11 +378,172 @@ button:disabled {
   padding: 0.75rem;
 }
 
+.preview-image-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+}
+
 .preview-image {
   max-width: 100%;
   height: auto;
   background: #fff;
   box-shadow: 0 8px 24px rgba(28, 48, 84, 0.12);
+}
+
+.evidence-highlight {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #d9480f;
+  background: rgba(255, 146, 43, 0.28);
+  border-radius: 3px;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+
+.funding-section {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #e6edf6;
+}
+
+.funding-hint {
+  margin: 0 0 0.85rem;
+  line-height: 1.55;
+}
+
+.issue-card {
+  border: 1px solid #d9e1ec;
+  border-radius: 14px;
+  background: #fff;
+  padding: 1rem 1.05rem 1.1rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.issue-card.status-review-pass {
+  border-color: #9ed0b2;
+  background: linear-gradient(180deg, #f3fbf6 0%, #fff 42%);
+}
+
+.issue-card.status-review-fail {
+  border-color: #efb4b4;
+  background: linear-gradient(180deg, #fff5f5 0%, #fff 42%);
+}
+
+.issue-card.status-review-need_human_review,
+.issue-card.status-review-system_error {
+  border-color: #e6c37a;
+  background: linear-gradient(180deg, #fff9eb 0%, #fff 42%);
+}
+
+.issue-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.issue-card-head h4 {
+  margin: 0.2rem 0 0;
+  font-size: 1.05rem;
+}
+
+.issue-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.issue-grid > div,
+.issue-side dl > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.issue-grid dt,
+.issue-side dt {
+  color: #607089;
+  font-size: 0.82rem;
+}
+
+.issue-grid dd,
+.issue-side dd {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.issue-reason {
+  grid-column: 1 / -1;
+}
+
+.issue-sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.issue-side {
+  border: 1px solid #e5ecf5;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 0.85rem 0.9rem;
+}
+
+.issue-side h5 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.issue-side-meta {
+  margin: 0.25rem 0 0.65rem;
+  color: #607089;
+  font-size: 0.86rem;
+}
+
+.issue-side dl {
+  margin: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.evidence-link {
+  display: inline;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #1f4fd6;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.evidence-link:hover:not(:disabled) {
+  background: transparent;
+  color: #183fb0;
+}
+
+.status-review-pass {
+  background: #e7f7ee;
+  color: #0f6b3d;
+}
+
+.status-review-fail {
+  background: #fdecec;
+  color: #a12020;
+}
+
+.status-review-need_human_review,
+.status-review-system_error {
+  background: #fff6df;
+  color: #8a5a00;
 }
 
 .preview-text {

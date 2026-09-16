@@ -1,1 +1,1 @@
-"""Domain services for PDF materials (B02)."""
+"""Domain services for PDF materials and funding review (B02/B03)."""

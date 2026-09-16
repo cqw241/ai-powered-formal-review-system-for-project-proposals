@@ -1,4 +1,4 @@
-"""ORM models for projects and PDF materials."""
+"""ORM models for projects, PDF materials, and funding reviews."""
 
 from __future__ import annotations
 
@@ -43,6 +43,10 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    funding_reviews: Mapped[list[FundingReview]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
 
 
 class Material(Base):
@@ -68,3 +72,27 @@ class Material(Base):
     )
 
     project: Mapped[Project] = relationship(back_populates="materials")
+
+
+class FundingReview(Base):
+    """Persisted RULE-007 application-funding comparison for a project."""
+
+    __tablename__ = "funding_reviews"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    rule_id: Mapped[str] = mapped_column(String(32), nullable=False, default="RULE-007")
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    project: Mapped[Project] = relationship(back_populates="funding_reviews")

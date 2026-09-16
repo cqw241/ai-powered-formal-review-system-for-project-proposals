@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.funding import router as funding_router
 from app.api.materials import router as materials_router
 from app.api.projects import router as projects_router
 from app.config import get_settings
@@ -24,8 +25,8 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title="规证AI",
-        description="高校项目申报材料形式审查 — B02 PDF 上传与预览",
-        version="0.2.0",
+        description="高校项目申报材料形式审查 — B03 申请经费核对",
+        version="0.3.0",
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(projects_router)
     app.include_router(materials_router)
+    app.include_router(funding_router)
 
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
