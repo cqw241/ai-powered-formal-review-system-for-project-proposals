@@ -10,6 +10,7 @@ import {
   runFundingReview,
   uploadMaterial,
 } from './api'
+import PolicyWorkspace from './PolicyWorkspace'
 import type {
   EvidenceBBox,
   FundingReview,
@@ -23,6 +24,7 @@ import './App.css'
 type View =
   | { kind: 'list' }
   | { kind: 'detail'; projectId: string }
+  | { kind: 'policies' }
 
 const CATEGORY_OPTIONS: Array<{ value: MaterialCategory; label: string }> = [
   { value: 'APPLICATION', label: '申报书 (APPLICATION)' },
@@ -468,11 +470,32 @@ export default function App() {
           <h1>规证AI</h1>
         </div>
         <p className="header-note">
-          本阶段支持 PDF 上传预览与申请经费核对（RULE-007）。尚未核对的项目不会显示为“审查通过”。
+          本阶段支持项目材料上传预览、申请经费核对，以及政策上传与候选要求提取。候选要求仍是可编辑草稿，尚未启用为规则。
         </p>
+        <nav className="top-nav" aria-label="主导航">
+          <button
+            type="button"
+            className={`nav-btn${view.kind === 'list' || view.kind === 'detail' ? ' active' : ''}`}
+            onClick={() => setView({ kind: 'list' })}
+          >
+            项目
+          </button>
+          <button
+            type="button"
+            className={`nav-btn${view.kind === 'policies' ? ' active' : ''}`}
+            onClick={() => setView({ kind: 'policies' })}
+            data-testid="nav-policies"
+          >
+            政策与候选要求
+          </button>
+        </nav>
       </header>
 
       <main className="app-main">
+        {view.kind === 'policies' ? (
+          <PolicyWorkspace onBack={() => setView({ kind: 'list' })} />
+        ) : null}
+
         {view.kind === 'list' ? (
           <section className="panel">
             <div className="panel-head">
@@ -540,7 +563,9 @@ export default function App() {
               </ul>
             ) : null}
           </section>
-        ) : (
+        ) : null}
+
+        {view.kind === 'detail' ? (
           <section className="panel">
             <div className="panel-head">
               <h2>项目详情</h2>
@@ -879,7 +904,7 @@ export default function App() {
               </>
             ) : null}
           </section>
-        )}
+        ) : null}
       </main>
     </div>
   )

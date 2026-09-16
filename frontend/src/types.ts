@@ -80,3 +80,62 @@ export type FundingReview = {
   created_at: string
   finding: FundingFinding
 }
+
+export type PolicyStatus = 'PROCESSING' | 'READY' | 'FAILED'
+
+export type PolicyCandidate = {
+  id: string
+  policy_id: string
+  kind: string
+  title: string
+  category: string | null
+  amount_raw: string | null
+  amount_yuan: number | null
+  amount_unit: string | null
+  comparator: string | null
+  source_clause: string | null
+  source_page: number | null
+  source_quote: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export type PolicyCandidateUpdate = {
+  title?: string | null
+  category?: string | null
+  amount_raw?: string | null
+  comparator?: string | null
+  source_clause?: string | null
+  source_page?: number | null
+  source_quote?: string | null
+}
+
+export type PolicySummary = {
+  id: string
+  original_filename: string
+  title: string | null
+  page_count: number | null
+  status: PolicyStatus
+  error_summary: string | null
+  created_at: string
+  candidate_count: number
+}
+
+export type PolicyDetail = {
+  id: string
+  original_filename: string
+  title: string | null
+  page_count: number | null
+  status: PolicyStatus
+  error_summary: string | null
+  created_at: string
+  candidates: PolicyCandidate[]
+}
+
+export type PolicyPageText = {
+  policy_id: string
+  page_number: number
+  page_count: number
+  text: string
+}

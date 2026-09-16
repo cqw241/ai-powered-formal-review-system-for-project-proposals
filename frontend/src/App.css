@@ -572,6 +572,125 @@ button:disabled {
   overflow: auto;
 }
 
+.top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+}
+
+.nav-btn {
+  background: #eef3fb;
+  color: #243757;
+  padding: 0.55rem 0.95rem;
+}
+
+.nav-btn.active {
+  background: #1f4fd6;
+  color: #fff;
+}
+
+.nav-btn:hover:not(:disabled):not(.active) {
+  background: #e2eaf7;
+}
+
+.candidate-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.candidate-card {
+  width: 100%;
+  text-align: left;
+  background: #f8fafc;
+  color: inherit;
+  border: 1px solid #dbe3ef;
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.85rem 0.95rem;
+}
+
+.candidate-card:hover:not(:disabled) {
+  background: #f1f6ff;
+  border-color: #b8c9e6;
+}
+
+.candidate-card.active {
+  border-color: #2f6bff;
+  box-shadow: 0 0 0 2px rgba(47, 107, 255, 0.18);
+  background: #f5f8ff;
+}
+
+.candidate-card.funding-cap {
+  border-left: 4px solid #1f4fd6;
+}
+
+.candidate-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.candidate-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  color: #607089;
+  font-size: 0.9rem;
+}
+
+.candidate-quote {
+  color: #45566d;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.candidate-edit-form {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #e5ecf5;
+  border-radius: 14px;
+  background: #f8fafc;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.candidate-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.candidate-edit-grid label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.candidate-edit-grid label.full-width {
+  grid-column: 1 / -1;
+}
+
+.candidate-edit-grid input,
+.candidate-edit-grid textarea {
+  font: inherit;
+  font-weight: 400;
+  border: 1px solid #c9d4e3;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  background: #fff;
+}
+
+.candidate-edit-grid textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
 @media (max-width: 640px) {
   .app-header,
   .app-main {
@@ -589,6 +708,10 @@ button:disabled {
   }
 
   .preview-toolbar .ghost-btn {
+    flex: 1 1 auto;
+  }
+
+  .nav-btn {
     flex: 1 1 auto;
   }
 }
