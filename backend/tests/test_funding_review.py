@@ -202,3 +202,76 @@ def test_get_funding_review_404_when_absent(client):
 def test_unknown_project_funding_review_404(client):
     response = client.post("/api/projects/00000000-0000-0000-0000-000000000000/funding-review")
     assert response.status_code == 404
+
+
+def test_api_response_shape_matches_project_material_conventions(client):
+    project_id = _create_project(client, "响应形态")
+    _upload(client, project_id, A1, "APPLICATION")
+    _upload(client, project_id, A2, "BUDGET")
+    body = client.post(f"/api/projects/{project_id}/funding-review").json()
+
+    assert set(body.keys()) >= {"id", "project_id", "rule_id", "status", "created_at", "finding"}
+    assert body["status"] in {"PASS", "FAIL", "NEED_HUMAN_REVIEW", "SYSTEM_ERROR"}
+    assert body["created_at"].endswith("Z")
+    assert "T" in body["created_at"]
+    assert body["finding"]["status"] == body["status"]
+    assert body["finding"]["compared_at"] is None or str(body["finding"]["compared_at"]).endswith("Z")
+    assert body["finding"]["left"]["category"] == "APPLICATION"
+    assert body["finding"]["right"]["category"] == "BUDGET"
+
+
+def test_llm_fallback_attaches_bbox_from_text_search(tmp_path: Path):
+    path = tmp_path / "llm_text_layer.pdf"
+    _write_pdf(path, ["申请经费 30.00 万元", "负责人 测试"])
+
+    class _FakeOutcome:
+        class result:
+            summary = (
+                "FIELD=申请经费; RAW=30.00 万元; PAGE=1; BBOX=空; "
+                "CONFIDENT=yes; NOTE=fixture"
+            )
+
+    result = extract_application_funding_from_pdf(
+        path,
+        prefer_labels=("不存在的标签",),
+        use_llm_fallback=True,
+        llm_analyze=lambda *args, **kwargs: _FakeOutcome(),
+    )
+    assert result.source == "llm_vision"
+    assert result.reliable is True
+    assert result.amount_yuan == 300_000
+    assert result.bbox is not None
+    assert result.bbox.page_width > 0
+    assert result.bbox.x1 > result.bbox.x0
+
+
+def test_llm_fallback_attaches_bbox_from_normalized_coords(tmp_path: Path):
+    # Image-only-ish page: label text absent so search cannot hit; use model BBOX.
+    path = tmp_path / "llm_scan_like.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page(width=500, height=700)
+    page.insert_text((40, 40), "no-funding-label-here", fontsize=12)
+    doc.save(path)
+    doc.close()
+
+    class _FakeOutcome:
+        class result:
+            summary = (
+                "FIELD=申请经费; RAW=15 万元; PAGE=1; BBOX=0.1,0.2,0.4,0.25; "
+                "CONFIDENT=yes; NOTE=scan"
+            )
+
+    result = extract_application_funding_from_pdf(
+        path,
+        prefer_labels=("申请经费",),
+        use_llm_fallback=True,
+        llm_analyze=lambda *args, **kwargs: _FakeOutcome(),
+    )
+    assert result.source == "llm_vision"
+    assert result.reliable is True
+    assert result.amount_yuan == 150_000
+    assert result.bbox is not None
+    assert abs(result.bbox.x0 - 50.0) < 0.01
+    assert abs(result.bbox.y0 - 140.0) < 0.01
+    assert abs(result.bbox.x1 - 200.0) < 0.01
+    assert abs(result.bbox.y1 - 175.0) < 0.01

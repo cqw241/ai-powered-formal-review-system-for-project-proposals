@@ -64,7 +64,7 @@ export type FundingSide = {
 export type FundingFinding = {
   rule_id: string
   check_field: string
-  status: ReviewStatus | string
+  status: ReviewStatus
   reason: string
   difference_yuan: number | null
   left: FundingSide | null
@@ -76,7 +76,7 @@ export type FundingReview = {
   id: string
   project_id: string
   rule_id: string
-  status: ReviewStatus | string
+  status: ReviewStatus
   created_at: string
   finding: FundingFinding
 }

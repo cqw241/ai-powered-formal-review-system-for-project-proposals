@@ -104,12 +104,6 @@ def parse_amount_text(text: str, *, default_unit: AmountUnit | None = None) -> P
     )
 
 
-def format_yuan(amount_yuan: int | None) -> str | None:
-    if amount_yuan is None:
-        return None
-    return f"{amount_yuan} 元"
-
-
 def difference_yuan(left: int | None, right: int | None) -> int | None:
     """Absolute difference when both sides are known; otherwise None."""
     if left is None or right is None:

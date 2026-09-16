@@ -10,13 +10,20 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
-from app.models import FundingReview, Material, MaterialCategory, MaterialStatus
+from app.models import (
+    FundingReview,
+    FundingReviewStatus,
+    Material,
+    MaterialCategory,
+    MaterialStatus,
+)
+from app.schemas import FundingFinding, FundingReviewRead
 from app.services.funding_extract import (
     ExtractedFunding,
     extract_application_funding_from_pdf,
@@ -24,7 +31,6 @@ from app.services.funding_extract import (
 from app.services.money import UNIT_LABELS, difference_yuan
 from app.services.storage import material_file_path
 
-ReviewStatus = Literal["PASS", "FAIL", "NEED_HUMAN_REVIEW", "SYSTEM_ERROR"]
 RULE_ID = "RULE-007"
 CHECK_FIELD = "申请经费"
 
@@ -84,7 +90,7 @@ def run_funding_review(
             right=None,
             difference=None,
         )
-        return _persist(db, project_id, "NEED_HUMAN_REVIEW", payload)
+        return _persist(db, project_id, FundingReviewStatus.NEED_HUMAN_REVIEW, payload)
 
     try:
         app_path = material_file_path(application.id, cfg)
@@ -101,7 +107,7 @@ def run_funding_review(
         )
     except Exception as exc:  # noqa: BLE001 — surface as SYSTEM_ERROR finding
         payload = _error_payload(f"经费核对过程失败：{exc}")
-        return _persist(db, project_id, "SYSTEM_ERROR", payload)
+        return _persist(db, project_id, FundingReviewStatus.SYSTEM_ERROR, payload)
 
     left = SideView(
         material_id=application.id,
@@ -120,7 +126,7 @@ def run_funding_review(
     payload = {
         "rule_id": RULE_ID,
         "check_field": CHECK_FIELD,
-        "status": status,
+        "status": status.value,
         "reason": reason,
         "difference_yuan": diff,
         "left": left.as_dict(),
@@ -140,38 +146,39 @@ def get_latest_funding_review(db: Session, project_id: str) -> FundingReview | N
     return db.scalars(statement).first()
 
 
-def review_to_dict(review: FundingReview) -> dict[str, Any]:
-    payload = json.loads(review.payload_json)
-    return {
-        "id": review.id,
-        "project_id": review.project_id,
-        "rule_id": review.rule_id,
-        "status": review.status,
-        "created_at": _iso(review.created_at),
-        "finding": payload,
-    }
+def to_funding_review_read(review: FundingReview) -> FundingReviewRead:
+    """Build API response the same way Project/Material use response models."""
+    finding = FundingFinding.model_validate(json.loads(review.payload_json))
+    return FundingReviewRead(
+        id=review.id,
+        project_id=review.project_id,
+        rule_id=review.rule_id,
+        status=FundingReviewStatus(review.status),
+        created_at=review.created_at,
+        finding=finding,
+    )
 
 
 def _compare(
     left: ExtractedFunding,
     right: ExtractedFunding,
-) -> tuple[ReviewStatus, str, int | None]:
+) -> tuple[FundingReviewStatus, str, int | None]:
     if not left.reliable or left.amount_yuan is None:
         return (
-            "NEED_HUMAN_REVIEW",
+            FundingReviewStatus.NEED_HUMAN_REVIEW,
             left.reason or "申报书申请经费无法可靠读取，需人工确认",
             None,
         )
     if not right.reliable or right.amount_yuan is None:
         return (
-            "NEED_HUMAN_REVIEW",
+            FundingReviewStatus.NEED_HUMAN_REVIEW,
             right.reason or "预算表申请经费无法可靠读取，需人工确认",
             None,
         )
 
     if left.field_kind != "application_funding" or right.field_kind != "application_funding":
         return (
-            "NEED_HUMAN_REVIEW",
+            FundingReviewStatus.NEED_HUMAN_REVIEW,
             "字段含义不清：未能确认两侧均为申请经费（可能与项目总经费混淆）",
             None,
         )
@@ -180,7 +187,7 @@ def _compare(
     assert diff is not None
     if diff == 0:
         return (
-            "PASS",
+            FundingReviewStatus.PASS,
             (
                 f"两侧申请经费规范化后均为 {left.amount_yuan} 元"
                 f"（申报书原文「{left.raw_value}」，预算表原文「{right.raw_value}」）"
@@ -188,7 +195,7 @@ def _compare(
             0,
         )
     return (
-        "FAIL",
+        FundingReviewStatus.FAIL,
         (
             f"申报书申请经费规范化为 {left.amount_yuan} 元，"
             f"预算表申请经费规范化为 {right.amount_yuan} 元，差额 {diff} 元"
@@ -218,14 +225,14 @@ def _latest_ready_material(
 def _persist(
     db: Session,
     project_id: str,
-    status: str,
+    status: FundingReviewStatus,
     payload: dict[str, Any],
 ) -> FundingReview:
     review = FundingReview(
         id=str(uuid.uuid4()),
         project_id=project_id,
         rule_id=RULE_ID,
-        status=status,
+        status=status.value,
         payload_json=json.dumps(payload, ensure_ascii=False),
     )
     db.add(review)
@@ -244,7 +251,7 @@ def _human_payload(
     return {
         "rule_id": RULE_ID,
         "check_field": CHECK_FIELD,
-        "status": "NEED_HUMAN_REVIEW",
+        "status": FundingReviewStatus.NEED_HUMAN_REVIEW.value,
         "reason": reason,
         "difference_yuan": difference,
         "left": left,
@@ -257,16 +264,10 @@ def _error_payload(reason: str) -> dict[str, Any]:
     return {
         "rule_id": RULE_ID,
         "check_field": CHECK_FIELD,
-        "status": "SYSTEM_ERROR",
+        "status": FundingReviewStatus.SYSTEM_ERROR.value,
         "reason": reason,
         "difference_yuan": None,
         "left": None,
         "right": None,
         "compared_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
-
-
-def _iso(value: datetime) -> str:
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")

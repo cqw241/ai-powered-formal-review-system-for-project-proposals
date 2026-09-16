@@ -28,6 +28,13 @@ class MaterialStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class FundingReviewStatus(str, Enum):
+    PASS = "PASS"
+    FAIL = "FAIL"
+    NEED_HUMAN_REVIEW = "NEED_HUMAN_REVIEW"
+    SYSTEM_ERROR = "SYSTEM_ERROR"
+
+
 class Project(Base):
     __tablename__ = "projects"
 

@@ -29,7 +29,7 @@ def create_funding_review(project_id: str, db: Session = Depends(get_db)) -> Fun
     """Run application-funding extraction + comparison and persist the finding."""
     _get_project_or_404(db, project_id)
     review = review_service.run_funding_review(db, project_id)
-    return FundingReviewRead.model_validate(review_service.review_to_dict(review))
+    return review_service.to_funding_review_read(review)
 
 
 @router.get(
@@ -45,4 +45,4 @@ def get_funding_review(project_id: str, db: Session = Depends(get_db)) -> Fundin
             status_code=status.HTTP_404_NOT_FOUND,
             detail="尚未进行申请经费核对",
         )
-    return FundingReviewRead.model_validate(review_service.review_to_dict(review))
+    return review_service.to_funding_review_read(review)
