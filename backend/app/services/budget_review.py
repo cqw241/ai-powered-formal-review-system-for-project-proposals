@@ -8,6 +8,7 @@ funding_extract / money. Missing or unclear values → NEED_HUMAN_REVIEW, never 
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from sqlalchemy import select
@@ -29,6 +30,7 @@ from app.services.budget_extract import (
     extract_budget,
     extract_project_category,
 )
+from app.services.field_overrides import apply_funding_override
 from app.services.funding_extract import BBox, ExtractedFunding, extract_application_funding_from_pdf
 from app.services.money import difference_yuan
 from app.services.storage import material_file_path
@@ -140,6 +142,7 @@ def execute_funding_cap_rule(db: Session, context: RuleExecutionContext) -> Rule
         budget=budget,
         snapshot=snapshot,
         settings=settings,
+        overrides=context.field_overrides,
     )
     evidence.extend(amount_evidence)
     data["application_amount_yuan"] = amount.amount_yuan if amount is not None else None
@@ -214,6 +217,14 @@ def execute_budget_sum_rule(db: Session, context: RuleExecutionContext) -> RuleE
         )
 
     extracted = extract_budget(_material_path(budget, get_settings()))
+    overridden_total = apply_funding_override(
+        extracted.application_total,
+        budget.id,
+        context.field_overrides,
+        "申请总额",
+    )
+    if overridden_total is not extracted.application_total:
+        extracted = replace(extracted, application_total=overridden_total)
     evidence.extend(_budget_evidence(budget, extracted))
     data.update(
         {
@@ -284,6 +295,7 @@ def _resolve_application_amount(
     budget: Material | None,
     snapshot: dict[str, Any],
     settings: Settings,
+    overrides: list | None = None,
 ) -> tuple[ExtractedFunding | None, list[ReviewEvidence]]:
     """Prefer 预算申请总额 (CASE-014 uses 153000), then 申报书申请经费, then snapshot."""
     evidence: list[ReviewEvidence] = []
@@ -296,6 +308,7 @@ def _resolve_application_amount(
             prefer_labels=BUDGET_TOTAL_LABELS,
             use_llm_fallback=False,
         )
+        budget_ext = apply_funding_override(budget_ext, budget.id, overrides, "申请总额")
         evidence.append(_funding_evidence(budget, budget_ext, field_name="申请总额"))
 
     app_ext = extract_application_funding_from_pdf(
@@ -303,6 +316,7 @@ def _resolve_application_amount(
         prefer_labels=APPLICATION_LABELS,
         use_llm_fallback=False,
     )
+    app_ext = apply_funding_override(app_ext, application.id, overrides, "申请经费")
     evidence.append(_funding_evidence(application, app_ext, field_name="申请经费"))
 
     if budget_ext is not None and budget_ext.reliable and budget_ext.amount_yuan is not None:

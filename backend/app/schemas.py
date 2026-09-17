@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_valid
 
 from app.models import (
     FundingReviewStatus,
+    HumanDecisionAction,
     MaterialCategory,
     MaterialStatus,
     PolicyStatus,
@@ -429,6 +430,64 @@ class EvidenceCompareView(BaseModel):
     funding_fields: list[LabeledFundingField] = Field(default_factory=list)
 
 
+class HumanDecisionCreate(BaseModel):
+    action: HumanDecisionAction
+    operator: str = Field(..., max_length=100)
+    note: str = Field(..., max_length=2000)
+    field_name: str | None = Field(default=None, max_length=64)
+    material_id: str | None = Field(default=None, max_length=36)
+    corrected_value: str | None = Field(default=None, max_length=300)
+
+    @field_validator("operator", "note")
+    @classmethod
+    def require_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("不能为空")
+        return cleaned
+
+    @field_validator("field_name", "material_id", "corrected_value")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned if cleaned else None
+
+    @model_validator(mode="after")
+    def require_correction_fields(self) -> HumanDecisionCreate:
+        if self.action == HumanDecisionAction.CORRECT_FIELD:
+            if not self.field_name or not self.material_id or not self.corrected_value:
+                raise ValueError("修正字段需要提供 field_name、material_id 和 corrected_value")
+        return self
+
+
+class HumanDecisionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    task_id: str
+    review_item_id: str
+    action: HumanDecisionAction
+    operator: str
+    note: str
+    field_name: str | None = None
+    material_id: str | None = None
+    original_value: str | None = None
+    corrected_value: str | None = None
+    affected_rule_codes: list[str] = Field(default_factory=list)
+    created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def ensure_utc(cls, value: datetime) -> datetime:
+        return _ensure_utc(value)
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime) -> str:
+        return _serialize_utc(value)
+
+
 class ReviewItemRead(BaseModel):
     id: str
     rule_code: str
@@ -443,7 +502,9 @@ class ReviewItemRead(BaseModel):
     funding_review_id: str | None = None
     sort_order: int
     result: RuleExecutionResult | None = None
+    original_result: RuleExecutionResult | None = None
     compare: EvidenceCompareView | None = None
+    human_decisions: list[HumanDecisionRead] = Field(default_factory=list)
 
 
 class ReviewTaskRead(BaseModel):

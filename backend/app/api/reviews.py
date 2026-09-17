@@ -7,8 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Project
-from app.schemas import ReviewTaskCreate, ReviewTaskRead
+from app.schemas import HumanDecisionCreate, ReviewTaskCreate, ReviewTaskRead
 from app.services import reviews as review_service
+from app.services.human_resolution import (
+    HumanResolutionError,
+    ItemNotFoundError,
+    TaskNotFoundError,
+    apply_human_decision,
+)
 from app.services.reviews import RuleNotEnabledError, RuleNotFoundError
 
 router = APIRouter(tags=["reviews"])
@@ -60,4 +66,25 @@ def get_review(project_id: str, task_id: str, db: Session = Depends(get_db)) -> 
     task = review_service.get_review_task(db, project_id, task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="审查任务不存在")
+    return review_service.to_review_task_read(task, db)
+
+
+@router.post(
+    "/api/projects/{project_id}/reviews/{task_id}/items/{item_id}/human-decisions",
+    response_model=ReviewTaskRead,
+)
+def create_human_decision(
+    project_id: str,
+    task_id: str,
+    item_id: str,
+    body: HumanDecisionCreate,
+    db: Session = Depends(get_db),
+) -> ReviewTaskRead:
+    _get_project_or_404(db, project_id)
+    try:
+        task = apply_human_decision(db, project_id, task_id, item_id, body)
+    except (TaskNotFoundError, ItemNotFoundError) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except HumanResolutionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return review_service.to_review_task_read(task, db)
