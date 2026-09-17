@@ -22,6 +22,7 @@ from app.review_contract import (
     RuleExecutionContext,
     RuleExecutionResult,
 )
+from app.services.field_overrides import apply_identity_override
 from app.services.identity_extract import (
     BBox,
     ExtractedIdentity,
@@ -123,6 +124,12 @@ def _compare_field(
             )
             continue
         extracted = extract(material_file_path(material.id, cfg))
+        extracted = apply_identity_override(
+            extracted,
+            material.id,
+            context.field_overrides,
+            field_name,
+        )
         sides.append((material, category.value, extracted))
 
     evidence = [_to_evidence(material, category, extracted) for material, category, extracted in sides]

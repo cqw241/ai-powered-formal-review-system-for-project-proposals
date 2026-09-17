@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { listReviews, listRules, startReview } from './api'
+import { applyHumanDecision, listReviews, listRules, startReview } from './api'
 import EvidenceCompare from './EvidenceCompare'
 import type {
   EvidenceBBox,
+  HumanDecision,
+  HumanDecisionAction,
   ReviewEvidence,
   ReviewItem,
   ReviewItemStatus,
@@ -31,6 +33,14 @@ const CHECK_STATUS_LABEL: Record<string, string> = {
   NOT_APPLICABLE: '不适用',
   SYSTEM_ERROR: '系统错误',
 }
+
+const HUMAN_ACTION_LABEL: Record<HumanDecisionAction, string> = {
+  CONFIRM: '确认问题',
+  CORRECT_FIELD: '修正字段',
+  MARK_NOT_APPLICABLE: '标记不适用',
+}
+
+const CORRECTABLE_FIELDS = new Set(['项目负责人', '项目名称', '申请经费', '申请总额', '申请金额'])
 
 const BUILTIN_RULES: Array<{ code: string; name: string }> = [
   { code: 'RULE-001', name: '三类必需材料完整性' },
@@ -91,6 +101,44 @@ function itemKey(item: ReviewItem): string {
   return item.source_rule_id ?? item.rule_code
 }
 
+function correctableFields(item: ReviewItem): Array<{
+  key: string
+  materialId: string
+  fieldName: string
+  label: string
+  originalValue: string
+}> {
+  const source = item.original_result ?? item.result
+  const fields: Array<{
+    key: string
+    materialId: string
+    fieldName: string
+    label: string
+    originalValue: string
+  }> = []
+  const seen = new Set<string>()
+  for (const evidence of source?.evidence ?? []) {
+    if (!evidence.material_id || !evidence.field_name || !CORRECTABLE_FIELDS.has(evidence.field_name)) {
+      continue
+    }
+    const key = `${evidence.material_id}::${evidence.field_name}`
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    const file = evidence.original_filename ? ` · ${evidence.original_filename}` : ''
+    const originalValue = evidence.raw_value || String(evidence.normalized_value ?? '')
+    fields.push({
+      key,
+      materialId: evidence.material_id,
+      fieldName: evidence.field_name,
+      label: `${evidence.field_name}${file}${originalValue ? ` · 原值 ${originalValue}` : ''}`,
+      originalValue,
+    })
+  }
+  return fields
+}
+
 function evidenceLabel(evidence: ReviewEvidence): string {
   const field = evidence.field_name || '原文'
   const file = evidence.original_filename ? ` · ${evidence.original_filename}` : ''
@@ -149,6 +197,7 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [detailItemId, setDetailItemId] = useState<string | null>(null)
+  const [operator, setOperator] = useState('')
   const selectionReady = useRef(false)
 
   const enabledRules = useMemo(() => rules.filter((item) => item.enabled), [rules])
@@ -214,6 +263,11 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
     )
   }
 
+  function handleTaskUpdated(task: ReviewTask) {
+    setTasks((prev) => prev.map((row) => (row.id === task.id ? task : row)))
+    setActiveId(task.id)
+  }
+
   async function handleStart() {
     setRunning(true)
     setError(null)
@@ -238,7 +292,7 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
         </button>
       </div>
       <p className="muted funding-hint">
-        一次审查内置 RULE-001/002/003/004/006/007/008/009/010。勾选已启用的 RULE-005 按项目类别用当时版本上限。开始后先落库「运行中」，刷新可续看。「失败」只表示执行出错；规则不通过是已完成；不适用单独展示。点击证据或「对照原文」可打开双文档对照：字段名、原值、单位与差异；扫描页高亮随缩放对齐。申请经费与总经费分别标明。
+        一次审查内置 RULE-001/002/003/004/006/007/008/009/010。勾选已启用的 RULE-005 按项目类别用当时版本上限。开始后先落库「运行中」，刷新可续看。「失败」只表示执行出错；规则不通过是已完成；不适用单独展示。点击证据或「对照原文」可打开双文档对照：字段名、原值、单位与差异；扫描页高亮随缩放对齐。申请经费与总经费分别标明。可确认问题、修正提取字段或标记不适用；修正字段会按现有规则重算，机器原结果单独保留。
       </p>
 
       <div className="rule-picker" data-testid="review-rule-picker">
@@ -290,6 +344,15 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
         <span className={`status-chip status-task-${taskStatusClass}`} data-testid="review-task-status">
           {taskStatusLabel}
         </span>
+        <label className="human-operator">
+          操作者
+          <input
+            value={operator}
+            onChange={(event) => setOperator(event.target.value)}
+            placeholder="填写后再确认或修正"
+            data-testid="human-operator"
+          />
+        </label>
       </div>
 
       {error ? (
@@ -366,6 +429,16 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
                     <strong>{CHECK_STATUS_LABEL[item.check_status] ?? item.check_status}</strong>
                   </p>
                 ) : null}
+                {item.original_result && item.human_decisions && item.human_decisions.length > 0 ? (
+                  <p className="muted" data-testid={`original-result-${itemKey(item)}`}>
+                    机器原结果：
+                    <strong>
+                      {CHECK_STATUS_LABEL[item.original_result.status] ?? item.original_result.status}
+                    </strong>
+                    {' · '}
+                    {item.original_result.summary}
+                  </p>
+                ) : null}
                 <p className="candidate-quote">{item.summary}</p>
                 {item.snapshot ? (
                   <dl className="issue-grid">
@@ -412,11 +485,194 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
                 {visibleDetailId === item.id && item.compare ? (
                   <EvidenceCompare item={item} onOpenEvidence={onOpenEvidence} />
                 ) : null}
+                {displayTask.status === 'COMPLETED' ? (
+                  <HumanDisposition
+                    projectId={projectId}
+                    taskId={displayTask.id}
+                    item={item}
+                    operator={operator}
+                    disabled={running}
+                    onUpdated={handleTaskUpdated}
+                  />
+                ) : null}
               </li>
             ))}
           </ul>
         </div>
       ) : null}
     </div>
+  )
+}
+
+function HumanDisposition({
+  projectId,
+  taskId,
+  item,
+  operator,
+  disabled,
+  onUpdated,
+}: {
+  projectId: string
+  taskId: string
+  item: ReviewItem
+  operator: string
+  disabled: boolean
+  onUpdated: (task: ReviewTask) => void
+}) {
+  const [note, setNote] = useState('')
+  const [fieldKey, setFieldKey] = useState('')
+  const [corrected, setCorrected] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
+  const fields = useMemo(() => correctableFields(item), [item])
+  const selected = fields.find((field) => field.key === fieldKey) ?? fields[0] ?? null
+  const itemTestId = itemKey(item)
+  const locked = disabled || busy || item.status === 'RUNNING' || item.status === 'NOT_EXECUTED'
+
+  async function submit(action: HumanDecisionAction) {
+    setLocalError(null)
+    if (!operator.trim() || !note.trim()) {
+      setLocalError('请填写操作者与说明')
+      return
+    }
+    if (action === 'CORRECT_FIELD') {
+      if (!selected) {
+        setLocalError('当前条目没有可修正的提取字段')
+        return
+      }
+      if (!corrected.trim()) {
+        setLocalError('请填写修正后的值')
+        return
+      }
+    }
+    setBusy(true)
+    try {
+      const task = await applyHumanDecision(projectId, taskId, item.id, {
+        action,
+        operator: operator.trim(),
+        note: note.trim(),
+        field_name: action === 'CORRECT_FIELD' ? selected?.fieldName : null,
+        material_id: action === 'CORRECT_FIELD' ? selected?.materialId : null,
+        corrected_value: action === 'CORRECT_FIELD' ? corrected.trim() : null,
+      })
+      onUpdated(task)
+      if (action === 'CORRECT_FIELD') {
+        setCorrected('')
+      }
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : '人工处置失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="human-disposition" data-testid={`human-disposition-${itemTestId}`}>
+      <strong>人工确认与修正</strong>
+      <div className="candidate-edit-grid">
+        <label className="full-width">
+          说明
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="记录确认、修正或不适用的原因"
+            data-testid={`human-note-${itemTestId}`}
+          />
+        </label>
+      </div>
+      <div className="review-item-actions">
+        <button
+          type="button"
+          className="ghost-btn"
+          disabled={locked}
+          data-testid={`confirm-item-${itemTestId}`}
+          onClick={() => void submit('CONFIRM')}
+        >
+          确认问题
+        </button>
+        <button
+          type="button"
+          className="ghost-btn"
+          disabled={locked}
+          data-testid={`na-item-${itemTestId}`}
+          onClick={() => void submit('MARK_NOT_APPLICABLE')}
+        >
+          标记不适用
+        </button>
+      </div>
+      {fields.length > 0 ? (
+        <div className="candidate-edit-grid">
+          <label>
+            修正字段
+            <select
+              value={selected?.key ?? ''}
+              onChange={(event) => {
+                setFieldKey(event.target.value)
+                setCorrected('')
+              }}
+              data-testid={`correct-field-${itemTestId}`}
+            >
+              {fields.map((field) => (
+                <option key={field.key} value={field.key}>
+                  {field.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            修改后值
+            <input
+              value={corrected}
+              onChange={(event) => setCorrected(event.target.value)}
+              placeholder={selected?.originalValue ? `原值 ${selected.originalValue}` : '填写修正值'}
+              data-testid={`correct-value-${itemTestId}`}
+            />
+          </label>
+          <div className="review-item-actions">
+            <button
+              type="button"
+              disabled={locked}
+              data-testid={`correct-submit-${itemTestId}`}
+              onClick={() => void submit('CORRECT_FIELD')}
+            >
+              {busy ? '重算中…' : '修正并重算'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="muted">此条没有可修正的姓名或金额字段；仍可确认问题或标记不适用。</p>
+      )}
+      {localError ? (
+        <p className="msg error" role="alert">
+          {localError}
+        </p>
+      ) : null}
+      {(item.human_decisions ?? []).length > 0 ? (
+        <ol className="human-history" data-testid={`human-history-${itemTestId}`}>
+          {(item.human_decisions ?? []).map((decision) => (
+            <li key={decision.id}>
+              <HistoryEntry decision={decision} />
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
+  )
+}
+
+function HistoryEntry({ decision }: { decision: HumanDecision }) {
+  return (
+    <>
+      <span className="status-chip">{HUMAN_ACTION_LABEL[decision.action]}</span>
+      <span>
+        {decision.operator} · {formatDateTime(decision.created_at)}
+      </span>
+      {decision.field_name ? (
+        <span>
+          {decision.field_name}：{decision.original_value || '（空）'} → {decision.corrected_value}
+        </span>
+      ) : null}
+      <span className="muted">{decision.note}</span>
+    </>
   )
 }

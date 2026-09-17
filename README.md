@@ -1,6 +1,6 @@
 # 规证AI
 
-高校项目申报材料形式审查辅助应用。当前分支做 **W4**：B10 材料要求（RULE-001/008/009）与 B11 证据对照（通用问题详情、双文档对照、扫描页高亮）；一次审查运行 RULE-001/002/003/004/005/006/007/008/009/010。
+高校项目申报材料形式审查辅助应用。当前分支做 **W4**：B10 材料要求、B11 证据对照、B12 人工确认与修正；一次审查运行 RULE-001/002/003/004/005/006/007/008/009/010。
 
 > 本版本仅供本地开发。未实现登录与项目权限，**不要当作可安全公开部署的版本**。
 
@@ -35,6 +35,8 @@ backend/
     services/policy_storage.py
     services/rules.py
     services/reviews.py
+    services/human_resolution.py
+    services/field_overrides.py
     services/evidence_compare.py
     services/budget_extract.py
     services/budget_review.py
@@ -61,6 +63,8 @@ docs/competition-review/
   B06_实现与验收记录.md
   B07_实现与验收记录.md
   B08_实现与验收记录.md
+  B10_实现与验收记录.md
+  B12_实现与验收记录.md
   W3_并行开发契约.md
   W3_接线与验收记录.md
 .env.example
@@ -202,8 +206,9 @@ uv run python -c "from app.db import init_db; init_db(); print('ok')"
 | `POST` | `/api/projects/{project_id}/reviews` | 发起审查任务；body: `{ "rule_ids": ["..."] }` |
 | `GET` | `/api/projects/{project_id}/reviews` | 任务列表（新到旧，含逐项结果） |
 | `GET` | `/api/projects/{project_id}/reviews/{task_id}` | 指定任务 |
+| `POST` | `/api/projects/{project_id}/reviews/{task_id}/items/{item_id}/human-decisions` | 人工确认、修正字段或标记不适用 |
 
-条目 = 内置 RULE-001/002/003/004/006/007/008/009/010 + 勾选的已启用规则（通常是 RULE-005）。发起时先落库「运行中」任务与逐项占位，刷新可续看；结束后再写终态并写入 `review_item_results`。RULE-007 仍复用经费核对。PASS/FAIL/NOT_APPLICABLE → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。现有「开始核对」入口保留。POST 需要 JSON body。
+条目 = 内置 RULE-001/002/003/004/006/007/008/009/010 + 勾选的已启用规则（通常是 RULE-005）。发起时先落库「运行中」任务与逐项占位，刷新可续看；结束后再写终态并写入 `review_item_results`。RULE-007 仍复用经费核对。PASS/FAIL/NOT_APPLICABLE → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。现有「开始核对」入口保留。POST 需要 JSON body。人工处置写入独立 `human_decisions` / `review_item_human_results`，不覆盖机器原结果；修正字段后按现有执行器重算受影响规则。
 
 ## B06 / W3 使用说明
 
@@ -211,8 +216,9 @@ uv run python -c "from app.db import init_db; init_db(); print('ok')"
 2. 打开项目，上传申报书、预算表和承诺书。
 3. 在「审查工作台」确认内置规则已锁定，勾选 RULE-005，点击「开始审查」。
 4. 同一任务中查看必需材料、名称、负责人、周期、上限、预算合计、申请经费一致、设备附件、伦理适用性和签署日期的逐项结果；点击「对照原文」查看字段名、原值、单位与差异，并可打开对应页。扫描页高亮随缩放对齐；申请经费与总经费分别标明。
-5. 刷新后再打开该项目，任务与逐项状态仍在。
-6. 下方「开始核对」仍可单独跑 RULE-007。
+5. 填写操作者与说明后，可确认问题、修正提取字段或标记不适用。修正负责人或金额后，相关规则会重新计算；刷新后处置记录仍在，并可查看机器原结果与修改历史。
+6. 刷新后再打开该项目，任务与逐项状态仍在。
+7. 下方「开始核对」仍可单独跑 RULE-007。
 
 样例政策：
 
@@ -258,15 +264,14 @@ npm run build
 | RULE-009 | `execute_material_rule` | 数据/伦理适用性；不清时列出依据与待确认问题 |
 | RULE-010 | `execute_date_rule` | 承诺书签署日期 |
 
-结果写入 `review_item_results`，工作台展示摘要、双文档对照与可点击原文证据。PASS/FAIL/NOT_APPLICABLE → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。无已启用 RULE-005 时仍跑其余内置规则。B12 人工处置不在本分支。
+结果写入 `review_item_results`，工作台展示摘要、双文档对照与可点击原文证据。PASS/FAIL/NOT_APPLICABLE → 已完成；NEED_HUMAN_REVIEW → 待确认；SYSTEM_ERROR → 失败。规则 FAIL ≠ 任务失败。无已启用 RULE-005 时仍跑其余内置规则。人工确认/修正/不适用写入独立记录；修正字段后复用现有执行器重算，不手工覆盖规则结论。
 
-## B12 接续入口
+## B12 人工处置
 
-- 审查任务：`POST/GET /api/projects/{id}/reviews`
-- 通用结果：`review_item_results` + `RuleExecutionResult.evidence`
-- 已启用规则：`GET /api/rules`
-
-B12 再做确认问题、修正字段、标记不适用（依赖 B10/B11）。**不要**在本分支提前实现。
+- `POST /api/projects/{id}/reviews/{task_id}/items/{item_id}/human-decisions`
+- 机器原结果：`review_item_results`（任务完成后不再改写）
+- 人工记录：`human_decisions`（追加）+ `review_item_human_results`（有效结果）
+- 字段覆盖经 `RuleExecutionContext.field_overrides` 注入现有执行器
 
 ## 验收记录
 
@@ -280,6 +285,7 @@ B12 再做确认问题、修正字段、标记不适用（依赖 B10/B11）。**
 - [B08 实现与验收记录](docs/competition-review/B08_实现与验收记录.md)
 - [W3 接线与验收记录](docs/competition-review/W3_接线与验收记录.md)
 - [B10 实现与验收记录](docs/competition-review/B10_实现与验收记录.md)
+- [B12 实现与验收记录](docs/competition-review/B12_实现与验收记录.md)
 
 ## 可选：安装环境排障
 

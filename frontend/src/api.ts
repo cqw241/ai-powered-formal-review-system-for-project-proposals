@@ -8,6 +8,7 @@ import type {
   PolicyCandidateUpdate,
   PolicyDetail,
   PolicyPageText,
+  HumanDecisionCreate,
   PolicySummary,
   Project,
   ReviewTask,
@@ -257,4 +258,24 @@ export async function listReviews(projectId: string): Promise<ReviewTask[]> {
     throw new Error(await parseError(response))
   }
   return response.json() as Promise<ReviewTask[]>
+}
+
+export async function applyHumanDecision(
+  projectId: string,
+  taskId: string,
+  itemId: string,
+  body: HumanDecisionCreate,
+): Promise<ReviewTask> {
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/reviews/${encodeURIComponent(taskId)}/items/${encodeURIComponent(itemId)}/human-decisions`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!response.ok) {
+    throw new Error(await parseError(response))
+  }
+  return response.json() as Promise<ReviewTask>
 }

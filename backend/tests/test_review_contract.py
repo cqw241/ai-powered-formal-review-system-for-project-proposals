@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.db import Base
 from app.models import Project, ReviewItem, ReviewItemStatus, ReviewTask, ReviewTaskStatus
 from app.review_contract import (
+    FieldOverride,
     ReviewCheckStatus,
     ReviewEvidence,
     RuleExecutionContext,
@@ -135,3 +136,13 @@ def test_execution_context_carries_only_integration_inputs():
 
     assert context.rule_code == "RULE-005"
     assert context.snapshot == {"category": "人文社会科学类", "amount_yuan": 150000}
+    assert context.field_overrides == []
+
+    with_override = context.model_copy(
+        update={
+            "field_overrides": [
+                FieldOverride(material_id="mat-1", field_name="项目负责人", raw_value="林书言")
+            ]
+        }
+    )
+    assert with_override.field_overrides[0].raw_value == "林书言"

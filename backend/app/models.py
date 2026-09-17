@@ -49,6 +49,12 @@ class ReviewItemStatus(str, Enum):
     NOT_EXECUTED = "NOT_EXECUTED"
 
 
+class HumanDecisionAction(str, Enum):
+    CONFIRM = "CONFIRM"
+    CORRECT_FIELD = "CORRECT_FIELD"
+    MARK_NOT_APPLICABLE = "MARK_NOT_APPLICABLE"
+
+
 class PolicyStatus(str, Enum):
     PROCESSING = "PROCESSING"
     READY = "READY"
@@ -298,6 +304,11 @@ class ReviewTask(Base):
         cascade="all, delete-orphan",
         order_by="ReviewItem.sort_order",
     )
+    human_decisions: Mapped[list[HumanDecision]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="HumanDecision.created_at",
+    )
 
 
 class ReviewItem(Base):
@@ -340,3 +351,75 @@ class ReviewItem(Base):
     )
 
     task: Mapped[ReviewTask] = relationship(back_populates="items")
+    human_result: Mapped[ReviewItemHumanResult | None] = relationship(
+        back_populates="item",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class HumanDecision(Base):
+    """Append-only human disposition on a completed review task."""
+
+    __tablename__ = "human_decisions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    task_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("review_tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    review_item_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("review_items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    operator: Mapped[str] = mapped_column(String(100), nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    field_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    material_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    original_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    corrected_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    affected_rule_codes_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    task: Mapped[ReviewTask] = relationship(back_populates="human_decisions")
+
+
+class ReviewItemHumanResult(Base):
+    """Latest effective result after human actions. Does not replace review_item_results."""
+
+    __tablename__ = "review_item_human_results"
+
+    review_item_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("review_items.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    decision_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("human_decisions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    item: Mapped[ReviewItem] = relationship(back_populates="human_result")

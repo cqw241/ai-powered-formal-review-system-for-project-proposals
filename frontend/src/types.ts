@@ -274,6 +274,32 @@ export type EvidenceCompareView = {
   funding_fields: LabeledFundingField[]
 }
 
+export type HumanDecisionAction = 'CONFIRM' | 'CORRECT_FIELD' | 'MARK_NOT_APPLICABLE'
+
+export type HumanDecision = {
+  id: string
+  task_id: string
+  review_item_id: string
+  action: HumanDecisionAction
+  operator: string
+  note: string
+  field_name: string | null
+  material_id: string | null
+  original_value: string | null
+  corrected_value: string | null
+  affected_rule_codes: string[]
+  created_at: string
+}
+
+export type HumanDecisionCreate = {
+  action: HumanDecisionAction
+  operator: string
+  note: string
+  field_name?: string | null
+  material_id?: string | null
+  corrected_value?: string | null
+}
+
 export type ReviewItem = {
   id: string
   rule_code: string
@@ -288,7 +314,9 @@ export type ReviewItem = {
   funding_review_id: string | null
   sort_order: number
   result?: RuleExecutionResult | null
+  original_result?: RuleExecutionResult | null
   compare?: EvidenceCompareView | null
+  human_decisions?: HumanDecision[]
 }
 
 export type ReviewTask = {

@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     FundingReviewStatus,
+    HumanDecision,
+    HumanDecisionAction,
     ReviewItem,
     ReviewItemStatus,
     ReviewTask,
@@ -21,13 +23,22 @@ from app.models import (
     utc_now,
 )
 from app.review_contract import (
+    FieldOverride,
     ReviewCheckStatus,
     ReviewEvidence,
     ReviewEvidenceBBox,
     RuleExecutionContext,
     RuleExecutionResult,
 )
-from app.schemas import BoundRuleSnapshot, FundingFinding, FundingReviewRead, ReviewItemRead, ReviewTaskRead
+from app.schemas import (
+    BoundRuleSnapshot,
+    FundingFinding,
+    FundingReviewRead,
+    HumanDecisionRead,
+    ReviewItemRead,
+    ReviewTaskRead,
+)
+from app.services.funding_review import execute_funding_rule
 from app.services import funding_review as funding_service
 from app.services.budget_review import execute_budget_rule
 from app.services.date_review import execute_date_rule
@@ -114,14 +125,41 @@ def get_review_task(db: Session, project_id: str, task_id: str) -> ReviewTask | 
 
 def to_review_task_read(task: ReviewTask, db: Session | None = None) -> ReviewTaskRead:
     items = sorted(task.items, key=lambda item: item.sort_order)
+    human_results: dict[str, RuleExecutionResult] = {}
+    decisions: list[HumanDecision] = []
+    if db is not None:
+        from app.services.human_resolution import list_task_decisions, load_human_results
+
+        human_results = load_human_results(db, [item.id for item in items])
+        decisions = list_task_decisions(db, task.id)
     return ReviewTaskRead(
         id=task.id,
         project_id=task.project_id,
         status=ReviewTaskStatus(task.status),
         created_at=task.created_at,
         updated_at=task.updated_at,
-        items=[_to_item_read(item, db) for item in items],
+        items=[_to_item_read(item, db, human_results, decisions) for item in items],
     )
+
+
+def execute_item_with_overrides(
+    db: Session,
+    project_id: str,
+    item: ReviewItem,
+    overrides: list[FieldOverride],
+) -> RuleExecutionResult:
+    """Re-run one existing executor with human field overrides. Does not persist."""
+    context = _execution_context(project_id, item, overrides)
+    if item.rule_code == RULE_007:
+        return execute_funding_rule(db, context)
+    executor = EXECUTORS.get(item.rule_code)
+    if executor is None:
+        return RuleExecutionResult(
+            status=ReviewCheckStatus.SYSTEM_ERROR,
+            summary=f"{item.rule_code} 没有可重算的执行器",
+            data={"rule_code": item.rule_code},
+        )
+    return executor(db, context)
 
 
 def _require_task(db: Session, project_id: str, task_id: str) -> ReviewTask:
@@ -130,15 +168,24 @@ def _require_task(db: Session, project_id: str, task_id: str) -> ReviewTask:
     return loaded
 
 
-def _to_item_read(item: ReviewItem, db: Session | None) -> ReviewItemRead:
+def _to_item_read(
+    item: ReviewItem,
+    db: Session | None,
+    human_results: dict[str, RuleExecutionResult],
+    decisions: list[HumanDecision],
+) -> ReviewItemRead:
     snapshot = None
     if item.snapshot_json:
         snapshot = BoundRuleSnapshot.model_validate(json.loads(item.snapshot_json))
     check_status = FundingReviewStatus(item.check_status) if item.check_status else None
-    result = load_rule_result(db, item.id) if db is not None else None
+    original = load_rule_result(db, item.id) if db is not None else None
+    result = human_results.get(item.id) or original
     compare = None
     if result is not None:
         compare = build_compare_view(result, material_paths=_material_paths_for_result(result))
+    from app.services.human_resolution import decisions_for_item
+
+    item_decisions = decisions_for_item(item, decisions) if decisions else []
     return ReviewItemRead(
         id=item.id,
         rule_code=item.rule_code,
@@ -153,7 +200,44 @@ def _to_item_read(item: ReviewItem, db: Session | None) -> ReviewItemRead:
         funding_review_id=item.funding_review_id,
         sort_order=item.sort_order,
         result=result,
+        original_result=original,
         compare=compare,
+        human_decisions=[_to_decision_read(row) for row in item_decisions],
+    )
+
+
+def _to_decision_read(decision: HumanDecision) -> HumanDecisionRead:
+    return HumanDecisionRead(
+        id=decision.id,
+        task_id=decision.task_id,
+        review_item_id=decision.review_item_id,
+        action=HumanDecisionAction(decision.action),
+        operator=decision.operator,
+        note=decision.note,
+        field_name=decision.field_name,
+        material_id=decision.material_id,
+        original_value=decision.original_value,
+        corrected_value=decision.corrected_value,
+        affected_rule_codes=json.loads(decision.affected_rule_codes_json or "[]"),
+        created_at=decision.created_at,
+    )
+
+
+def _execution_context(
+    project_id: str,
+    item: ReviewItem,
+    overrides: list[FieldOverride] | None = None,
+) -> RuleExecutionContext:
+    snapshot = json.loads(item.snapshot_json) if item.snapshot_json else None
+    return RuleExecutionContext(
+        project_id=project_id,
+        review_item_id=item.id,
+        rule_code=item.rule_code,
+        source_rule_id=item.source_rule_id,
+        version_id=item.version_id,
+        version_number=item.version_number,
+        snapshot=snapshot,
+        field_overrides=list(overrides or []),
     )
 
 
@@ -269,16 +353,7 @@ def _run_item(db: Session, project_id: str, item: ReviewItem) -> None:
         item.summary = NOT_EXECUTED_SUMMARY
         db.add(item)
         return
-    snapshot = json.loads(item.snapshot_json) if item.snapshot_json else None
-    context = RuleExecutionContext(
-        project_id=project_id,
-        review_item_id=item.id,
-        rule_code=item.rule_code,
-        source_rule_id=item.source_rule_id,
-        version_id=item.version_id,
-        version_number=item.version_number,
-        snapshot=snapshot,
-    )
+    context = _execution_context(project_id, item)
     try:
         result = executor(db, context)
     except Exception as exc:  # noqa: BLE001

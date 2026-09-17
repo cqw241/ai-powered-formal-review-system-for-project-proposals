@@ -50,6 +50,16 @@ class ReviewEvidence(BaseModel):
     reason: str | None = None
 
 
+class FieldOverride(BaseModel):
+    """One human-corrected extracted field used when re-running executors."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    material_id: str
+    field_name: str
+    raw_value: str
+
+
 class RuleExecutionContext(BaseModel):
     """Inputs that the integration layer passes to a domain rule executor."""
 
@@ -62,6 +72,7 @@ class RuleExecutionContext(BaseModel):
     version_id: str | None = None
     version_number: int | None = None
     snapshot: dict[str, Any] | None = None
+    field_overrides: list[FieldOverride] = Field(default_factory=list)
 
 
 class RuleExecutionResult(BaseModel):
