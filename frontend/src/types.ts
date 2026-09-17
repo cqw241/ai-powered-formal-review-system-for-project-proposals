@@ -37,7 +37,7 @@ export type ApiErrorBody = {
   detail?: string | Array<{ loc?: unknown[]; msg?: string; type?: string }>
 }
 
-export type ReviewStatus = 'PASS' | 'FAIL' | 'NEED_HUMAN_REVIEW' | 'SYSTEM_ERROR'
+export type ReviewStatus = 'PASS' | 'FAIL' | 'NEED_HUMAN_REVIEW' | 'NOT_APPLICABLE' | 'SYSTEM_ERROR'
 
 export type EvidenceBBox = {
   x0: number

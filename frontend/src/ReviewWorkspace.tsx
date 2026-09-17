@@ -28,15 +28,19 @@ const CHECK_STATUS_LABEL: Record<string, string> = {
   PASS: '通过',
   FAIL: '不通过',
   NEED_HUMAN_REVIEW: '待人工确认',
+  NOT_APPLICABLE: '不适用',
   SYSTEM_ERROR: '系统错误',
 }
 
 const BUILTIN_RULES: Array<{ code: string; name: string }> = [
+  { code: 'RULE-001', name: '三类必需材料完整性' },
   { code: 'RULE-002', name: '项目名称跨文件一致' },
   { code: 'RULE-003', name: '项目负责人跨文件一致' },
   { code: 'RULE-004', name: '项目周期窗口与时长' },
   { code: 'RULE-006', name: '预算科目合计一致' },
   { code: 'RULE-007', name: '申请经费跨文件一致性' },
+  { code: 'RULE-008', name: '大额设备必要性附件' },
+  { code: 'RULE-009', name: '数据与伦理适用性' },
   { code: 'RULE-010', name: '承诺书签署日期' },
 ]
 
@@ -234,7 +238,7 @@ export default function ReviewWorkspace({ projectId, onTaskCreated, onOpenEviden
         </button>
       </div>
       <p className="muted funding-hint">
-        一次审查内置 RULE-002/003/004/006/007/010。勾选已启用的 RULE-005 按项目类别用当时版本上限。开始后先落库「运行中」，刷新可续看。「失败」只表示执行出错；规则不通过是已完成。点击证据或「对照原文」可打开双文档对照：字段名、原值、单位与差异；扫描页高亮随缩放对齐。申请经费与总经费分别标明。
+        一次审查内置 RULE-001/002/003/004/006/007/008/009/010。勾选已启用的 RULE-005 按项目类别用当时版本上限。开始后先落库「运行中」，刷新可续看。「失败」只表示执行出错；规则不通过是已完成；不适用单独展示。点击证据或「对照原文」可打开双文档对照：字段名、原值、单位与差异；扫描页高亮随缩放对齐。申请经费与总经费分别标明。
       </p>
 
       <div className="rule-picker" data-testid="review-rule-picker">

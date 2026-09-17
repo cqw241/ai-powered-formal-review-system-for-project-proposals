@@ -1,4 +1,4 @@
-"""Review tasks: built-in W3 rules plus selected enabled-rule snapshots."""
+"""Review tasks: built-in W3/W4 rules plus selected enabled-rule snapshots."""
 
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ from app.services.budget_review import execute_budget_rule
 from app.services.date_review import execute_date_rule
 from app.services.evidence_compare import build_compare_view
 from app.services.identity_review import execute_identity_rule
+from app.services.material_review import execute_material_rule
 from app.services.review_results import load_rule_result, persist_rule_result
 from app.services.rules import bound_snapshot, current_version, load_rule
 from app.services.storage import material_file_path
@@ -40,19 +41,25 @@ from app.services.storage import material_file_path
 RULE_007 = "RULE-007"
 NOT_EXECUTED_SUMMARY = "本阶段无执行器，已绑定当时版本快照。"
 BUILTIN_RULES: tuple[tuple[str, str], ...] = (
+    ("RULE-001", "三类必需材料完整性"),
     ("RULE-002", "项目名称跨文件一致"),
     ("RULE-003", "项目负责人跨文件一致"),
     ("RULE-004", "项目周期窗口与时长"),
     ("RULE-006", "预算科目合计一致"),
     ("RULE-007", "申请经费跨文件一致性"),
+    ("RULE-008", "大额设备必要性附件"),
+    ("RULE-009", "数据与伦理适用性"),
     ("RULE-010", "承诺书签署日期"),
 )
 EXECUTORS: dict[str, Callable[[Session, RuleExecutionContext], RuleExecutionResult]] = {
+    "RULE-001": execute_material_rule,
     "RULE-002": execute_identity_rule,
     "RULE-003": execute_identity_rule,
     "RULE-004": execute_date_rule,
     "RULE-005": execute_budget_rule,
     "RULE-006": execute_budget_rule,
+    "RULE-008": execute_material_rule,
+    "RULE-009": execute_material_rule,
     "RULE-010": execute_date_rule,
 }
 

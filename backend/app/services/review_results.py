@@ -34,7 +34,11 @@ review_item_results = Table(
 
 def item_status_for_check(check_status: ReviewCheckStatus) -> ReviewItemStatus:
     """Map a rule verdict to the existing B06 workspace item state."""
-    if check_status in {ReviewCheckStatus.PASS, ReviewCheckStatus.FAIL}:
+    if check_status in {
+        ReviewCheckStatus.PASS,
+        ReviewCheckStatus.FAIL,
+        ReviewCheckStatus.NOT_APPLICABLE,
+    }:
         return ReviewItemStatus.COMPLETED
     if check_status == ReviewCheckStatus.NEED_HUMAN_REVIEW:
         return ReviewItemStatus.PENDING_CONFIRMATION

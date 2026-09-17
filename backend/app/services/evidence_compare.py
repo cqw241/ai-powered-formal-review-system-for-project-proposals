@@ -26,12 +26,15 @@ from app.services.funding_extract import (
 from app.services.money import UNIT_LABELS, parse_amount_text
 
 CHECK_FIELD_BY_RULE = {
+    "RULE-001": "必需材料",
     "RULE-002": "项目名称",
     "RULE-003": "项目负责人",
     "RULE-004": "执行期",
     "RULE-005": "申请经费",
     "RULE-006": "预算科目合计",
     "RULE-007": "申请经费",
+    "RULE-008": "设备必要性说明",
+    "RULE-009": "数据与伦理适用性",
     "RULE-010": "签署日期",
 }
 
