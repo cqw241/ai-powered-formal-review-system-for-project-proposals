@@ -21,6 +21,7 @@ import type {
   MaterialCategory,
   Project,
 } from './types'
+import { MATERIAL_CATEGORY_LABEL } from './types'
 import './App.css'
 
 type View =
@@ -34,13 +35,6 @@ const CATEGORY_OPTIONS: Array<{ value: MaterialCategory; label: string }> = [
   { value: 'COMMITMENT', label: '承诺书 (COMMITMENT)' },
   { value: 'OTHER', label: '其他 (OTHER)' },
 ]
-
-const CATEGORY_LABEL: Record<MaterialCategory, string> = {
-  APPLICATION: '申报书',
-  BUDGET: '预算表',
-  COMMITMENT: '承诺书',
-  OTHER: '其他',
-}
 
 const STATUS_LABEL: Record<Material['status'], string> = {
   PROCESSING: '处理中',
@@ -888,7 +882,7 @@ export default function App() {
                             >
                               <span className="material-name">{material.original_filename}</span>
                               <span className="material-meta">
-                                <span className="status-chip">{CATEGORY_LABEL[material.category]}</span>
+                                <span className="status-chip">{MATERIAL_CATEGORY_LABEL[material.category]}</span>
                                 <span className={`status-chip status-${material.status.toLowerCase()}`}>
                                   {STATUS_LABEL[material.status]}
                                 </span>

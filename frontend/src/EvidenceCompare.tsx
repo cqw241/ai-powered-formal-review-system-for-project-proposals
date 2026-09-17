@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import PagePreview from './PagePreview'
-import type { CompareSide, EvidenceBBox, EvidenceCompareView, LabeledFundingField, ReviewItem } from './types'
-
-const CATEGORY_LABEL: Record<string, string> = {
-  APPLICATION: '申报书',
-  BUDGET: '预算表',
-  COMMITMENT: '承诺书',
-  OTHER: '其他',
-}
+import {
+  MATERIAL_CATEGORY_LABEL,
+  type CompareSide,
+  type EvidenceBBox,
+  type EvidenceCompareView,
+  type LabeledFundingField,
+  type ReviewItem,
+} from './types'
 
 const FIELD_KIND_LABEL: Record<string, string> = {
   application_funding: '申请经费',
@@ -37,7 +37,9 @@ function formatNormalized(value: string | number | boolean | null | undefined): 
 }
 
 function sideTitle(side: CompareSide, index: number): string {
-  const category = side.category ? CATEGORY_LABEL[side.category] || side.category : ''
+  const category = side.category
+    ? MATERIAL_CATEGORY_LABEL[side.category as keyof typeof MATERIAL_CATEGORY_LABEL] || side.category
+    : ''
   if (category && side.field_name) {
     return `${category} · ${side.field_name}`
   }

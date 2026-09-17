@@ -5,14 +5,24 @@ Reuses stored ReviewEvidence. Does not change B07/B08/B09 (or RULE-007) judgment
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
-from app.review_contract import ReviewEvidence, ReviewEvidenceBBox, RuleExecutionResult
+from app.review_contract import (
+    ReviewCheckStatus,
+    ReviewEvidence,
+    ReviewEvidenceBBox,
+    RuleExecutionResult,
+)
 from app.schemas import CompareSide, EvidenceBBox, EvidenceCompareView, LabeledFundingField
 from app.services import pdf as pdf_service
-from app.services.funding_extract import classify_label
+from app.services.funding_extract import (
+    APPLICATION_FUNDING_LABELS,
+    MATCHING_FUNDING_LABELS,
+    TOTAL_FUNDING_LABELS,
+    classify_label,
+    iter_inline_labeled_amounts,
+)
 from app.services.money import UNIT_LABELS, parse_amount_text
 
 CHECK_FIELD_BY_RULE = {
@@ -25,43 +35,26 @@ CHECK_FIELD_BY_RULE = {
     "RULE-010": "签署日期",
 }
 
-AMOUNT_FIELD_NAMES = {
-    "申请经费",
-    "申请总额",
-    "申请金额",
-    "申请资助经费",
+APPLICATION_FIELD_ALIASES = {
     "申报书申请经费",
     "预算申请总额",
     "科目合计",
     "经费上限",
-    "项目总经费",
-    "总经费",
-    "项目经费总额",
-    "经费总额",
-    "配套经费",
-    "自筹经费",
 }
 
-APPLICATION_FIELD_NAMES = {
-    "申请经费",
-    "申请总额",
-    "申请金额",
-    "申请资助经费",
-    "申报书申请经费",
-    "预算申请总额",
+AMOUNT_FIELD_NAMES = {
+    *APPLICATION_FUNDING_LABELS,
+    *TOTAL_FUNDING_LABELS,
+    *MATCHING_FUNDING_LABELS,
+    *APPLICATION_FIELD_ALIASES,
 }
 
-TOTAL_FIELD_NAMES = {
-    "项目总经费",
-    "总经费",
-    "项目经费总额",
-    "经费总额",
-}
+AMOUNT_RULES = {"RULE-005", "RULE-006", "RULE-007"}
 
 COMPARE_FIELD_PRIORITY = {
     "RULE-005": ("申请经费", "申请总额", "经费上限"),
     "RULE-006": ("申请总额", "科目合计"),
-    "RULE-007": ("申请经费", "申请总额", "项目总经费", "总经费"),
+    "RULE-007": ("申请经费", "申请总额", "申报书申请经费", "预算申请总额"),
 }
 
 NEAR_PT = 72.0
@@ -108,14 +101,14 @@ def classify_compare_field(field_name: str | None, field_kind: str | None = None
     name = (field_name or "").strip()
     if not name:
         return None
-    if name in TOTAL_FIELD_NAMES or ("总经费" in name and "申请" not in name):
-        return "total_funding"
-    if name in APPLICATION_FIELD_NAMES:
-        return "application_funding"
-    if name in {"配套经费", "自筹经费"}:
-        return "matching_funding"
     classified = classify_label(name)
-    return None if classified == "unknown" else classified
+    if classified != "unknown":
+        return classified
+    if name in APPLICATION_FIELD_ALIASES:
+        return "application_funding"
+    if "总经费" in name and "申请" not in name:
+        return "total_funding"
+    return None
 
 
 def infer_unit(evidence: ReviewEvidence) -> str | None:
@@ -211,19 +204,13 @@ def list_labeled_funding_fields(
             page = doc.load_page(page_index)
             page_number = page_index + 1
             text = page.get_text() or ""
-            for match in _LABEL_AMOUNT.finditer(text):
-                label = match.group("label")
-                amount = match.group("amount")
-                unit = match.group("unit") or ""
-                kind = classify_label(label)
-                if kind == "unknown":
-                    continue
+            for label, amount, unit, kind in iter_inline_labeled_amounts(text):
                 raw = f"{amount} {unit}".strip()
                 key = (label, raw, page_number)
                 if key in seen:
                     continue
                 seen.add(key)
-                bbox = _search_bbox(page, (f"{amount} {unit}".strip(), amount, label))
+                bbox = _search_bbox(page, (raw, amount, label))
                 found.append(
                     LabeledFundingField(
                         field_name=label,
@@ -258,7 +245,7 @@ def build_compare_view(
     for evidence in selected:
         display_bbox = evidence.bbox
         path = paths.get(evidence.material_id) if evidence.material_id else None
-        if path is not None and evidence.page_number:
+        if path is not None and evidence.page_number and evidence.reliable is False:
             display_bbox = expand_recognition_bbox(path, evidence.page_number, evidence.bbox) or evidence.bbox
         field_kind = classify_compare_field(evidence.field_name)
         sides.append(
@@ -281,22 +268,23 @@ def build_compare_view(
         )
 
     funding_fields: list[LabeledFundingField] = []
-    seen_materials: set[str] = set()
-    for evidence in result.evidence:
-        material_id = evidence.material_id
-        if not material_id or material_id in seen_materials:
-            continue
-        path = paths.get(material_id)
-        if path is None:
-            continue
-        seen_materials.add(material_id)
-        funding_fields.extend(
-            list_labeled_funding_fields(
-                path,
-                material_id=material_id,
-                original_filename=evidence.original_filename,
+    if rule_code in AMOUNT_RULES:
+        seen_materials: set[str] = set()
+        for evidence in result.evidence:
+            material_id = evidence.material_id
+            if not material_id or material_id in seen_materials:
+                continue
+            path = paths.get(material_id)
+            if path is None:
+                continue
+            seen_materials.add(material_id)
+            funding_fields.extend(
+                list_labeled_funding_fields(
+                    path,
+                    material_id=material_id,
+                    original_filename=evidence.original_filename,
+                )
             )
-        )
 
     return EvidenceCompareView(
         check_field=check_field,
@@ -310,62 +298,135 @@ def build_compare_view(
 def _select_sides(result: RuleExecutionResult, rule_code: str) -> list[ReviewEvidence]:
     evidence = list(result.evidence)
     preferred_names = COMPARE_FIELD_PRIORITY.get(rule_code)
+    if rule_code == "RULE-007":
+        application: list[ReviewEvidence] = []
+        non_total: list[ReviewEvidence] = []
+        preferred = preferred_names or ()
+        for item in evidence:
+            kind = classify_compare_field(item.field_name)
+            if kind != "total_funding":
+                non_total.append(item)
+            if kind in {"total_funding", "matching_funding"}:
+                continue
+            if item.field_name in preferred or kind == "application_funding":
+                application.append(item)
+        return application or non_total or evidence
     if preferred_names:
         preferred = [item for item in evidence if item.field_name in preferred_names]
-        if len(preferred) >= 2:
-            return preferred
+        if rule_code == "RULE-006":
+            locatable_lines = [
+                item
+                for item in evidence
+                if item.field_name not in preferred_names and (item.page_number or item.bbox)
+            ]
+            selected = preferred + locatable_lines
+            return _inherit_missing_pages(selected) or evidence
         if preferred:
             return preferred
     return evidence
 
 
+def _inherit_missing_pages(sides: list[ReviewEvidence]) -> list[ReviewEvidence]:
+    """Let computed fields (科目合计) open the same material page as a locatable sibling."""
+    pages: dict[str, int] = {}
+    for item in sides:
+        if item.material_id and item.page_number:
+            pages.setdefault(item.material_id, item.page_number)
+    filled: list[ReviewEvidence] = []
+    for item in sides:
+        if item.page_number or not item.material_id:
+            filled.append(item)
+            continue
+        page = pages.get(item.material_id)
+        filled.append(item.model_copy(update={"page_number": page}) if page else item)
+    return filled
+
+
 def _difference(result: RuleExecutionResult) -> tuple[str | None, int | None]:
     data = result.data or {}
-    yuan = data.get("difference_yuan")
-    if isinstance(yuan, int):
+    yuan = _as_int(data.get("difference_yuan"))
+    if result.status == ReviewCheckStatus.PASS:
+        return None, yuan if yuan else None
+    if yuan is not None:
         return f"{yuan} 元", yuan
-    if isinstance(yuan, float) and yuan.is_integer():
-        return f"{int(yuan)} 元", int(yuan)
 
-    values: list[str] = []
-    seen: set[str] = set()
-    for evidence in result.evidence:
-        if evidence.normalized_value is None or evidence.normalized_value == "":
+    period_diff = _period_difference(data)
+    if period_diff:
+        return period_diff, None
+
+    if data.get("deadline_ok") is False and data.get("signing_date") and data.get("deadline"):
+        return f"签署日期 {data['signing_date']} 晚于截止日 {data['deadline']}", None
+
+    values = data.get("normalized_values")
+    if isinstance(values, list):
+        unique = [str(item) for item in values if item is not None and str(item) != ""]
+        if len(unique) >= 2:
+            return " ≠ ".join(f"「{item}」" for item in unique), None
+
+    return _same_field_conflicts(result.evidence)
+
+
+def _period_difference(data: dict[str, Any]) -> str | None:
+    violations = data.get("violations")
+    if not isinstance(violations, list) or not violations:
+        return None
+    start = data.get("start_date")
+    end = data.get("end_date")
+    messages = {
+        "end_after_window": f"结束日期 {end} 晚于允许窗口 {data.get('window_end')}",
+        "start_before_window": f"开始日期 {start} 早于允许窗口 {data.get('window_start')}",
+        "duration_over_max": f"执行期超过最长 {data.get('max_months')} 个月",
+        "end_before_start": f"结束日期 {end} 早于开始日期 {start}",
+    }
+    parts = [messages[key] for key in violations if key in messages]
+    return "；".join(parts) if parts else None
+
+
+def _same_field_conflicts(evidence: list[ReviewEvidence]) -> tuple[str | None, int | None]:
+    by_field: dict[str, list[str]] = {}
+    for item in evidence:
+        name = item.field_name or ""
+        if not name or item.normalized_value is None or item.normalized_value == "":
             continue
-        text = str(evidence.normalized_value)
-        if text in seen:
-            continue
-        seen.add(text)
-        values.append(text)
-    if len(values) >= 2:
-        return " ≠ ".join(f"「{item}」" for item in values), None
+        text = str(item.normalized_value)
+        values = by_field.setdefault(name, [])
+        if text not in values:
+            values.append(text)
+    conflicts = [values for values in by_field.values() if len(values) >= 2]
+    if len(conflicts) == 1:
+        return " ≠ ".join(f"「{item}」" for item in conflicts[0]), None
     return None, None
 
 
-def _copy_bbox(bbox: ReviewEvidenceBBox | EvidenceBBox | None) -> ReviewEvidenceBBox | None:
+def _as_int(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
+def _bbox_kwargs(bbox: ReviewEvidenceBBox | EvidenceBBox | None) -> dict[str, float] | None:
     if bbox is None:
         return None
-    return ReviewEvidenceBBox(
-        x0=float(bbox.x0),
-        y0=float(bbox.y0),
-        x1=float(bbox.x1),
-        y1=float(bbox.y1),
-        page_width=float(bbox.page_width),
-        page_height=float(bbox.page_height),
-    )
+    return {
+        "x0": float(bbox.x0),
+        "y0": float(bbox.y0),
+        "x1": float(bbox.x1),
+        "y1": float(bbox.y1),
+        "page_width": float(bbox.page_width),
+        "page_height": float(bbox.page_height),
+    }
+
+
+def _copy_bbox(bbox: ReviewEvidenceBBox | EvidenceBBox | None) -> ReviewEvidenceBBox | None:
+    kwargs = _bbox_kwargs(bbox)
+    return None if kwargs is None else ReviewEvidenceBBox(**kwargs)
 
 
 def _to_schema_bbox(bbox: ReviewEvidenceBBox | EvidenceBBox | None) -> EvidenceBBox | None:
-    if bbox is None:
-        return None
-    return EvidenceBBox(
-        x0=float(bbox.x0),
-        y0=float(bbox.y0),
-        x1=float(bbox.x1),
-        y1=float(bbox.y1),
-        page_width=float(bbox.page_width),
-        page_height=float(bbox.page_height),
-    )
+    kwargs = _bbox_kwargs(bbox)
+    return None if kwargs is None else EvidenceBBox(**kwargs)
 
 
 def _block_rect(value: Any) -> tuple[float, float, float, float] | None:
@@ -410,10 +471,3 @@ def _search_bbox(page: Any, needles: tuple[str, ...]) -> ReviewEvidenceBBox | No
             )
     return None
 
-
-_LABEL_AMOUNT = re.compile(
-    r"(?P<label>申请经费|申请总额|申请金额|申请资助经费|项目总经费|总经费|项目经费总额|经费总额|配套经费|自筹经费)"
-    r"\s*[:：]?\s*"
-    r"(?P<amount>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*"
-    r"(?P<unit>人民币元|万元|千元|万|元)",
-)

@@ -230,6 +230,7 @@ def test_name_amount_date_issues_open_originals_with_compare_fields(client):
     name_compare = name["compare"]
     assert name_compare["check_field"] == "项目名称"
     assert name_compare["difference"]
+    assert name_compare["funding_fields"] == []
     assert len(name_compare["sides"]) >= 2
     for side in name_compare["sides"]:
         assert side["field_name"] == "项目名称"
@@ -266,6 +267,9 @@ def test_name_amount_date_issues_open_originals_with_compare_fields(client):
     assert period["check_status"] == "FAIL"
     period_compare = period["compare"]
     assert period_compare["check_field"] == "执行期"
+    assert period_compare["funding_fields"] == []
+    assert "≠" not in (period_compare["difference"] or "")
+    assert "2028-12-31" in (period_compare["difference"] or "")
     assert any(side["openable"] and side["bbox"] for side in period_compare["sides"])
     assert any(side["field_name"] in {"开始日期", "结束日期"} for side in period_compare["sides"])
 
@@ -273,6 +277,8 @@ def test_name_amount_date_issues_open_originals_with_compare_fields(client):
     assert signing["check_status"] == "FAIL"
     signing_compare = signing["compare"]
     assert signing_compare["check_field"] == "签署日期"
+    assert signing_compare["funding_fields"] == []
+    assert "截止日" in (signing_compare["difference"] or "")
     assert signing_compare["sides"][0]["openable"] is True
     assert signing_compare["sides"][0]["page_number"] >= 1
     assert signing_compare["sides"][0]["bbox"] is not None
@@ -317,9 +323,13 @@ def test_dual_funding_fixture_marks_application_and_total_separately(client):
     assert labeled["申请经费"]["field_kind"] == "application_funding"
     assert labeled["项目总经费"]["field_kind"] == "total_funding"
     assert labeled["申请经费"]["raw_value"] != labeled["项目总经费"]["raw_value"]
+    side_names = {side["field_name"] for side in compare["sides"]}
+    assert "项目总经费" not in side_names
+    assert "总经费" not in side_names
     side_kinds = {side["field_kind"] for side in compare["sides"] if side.get("field_kind")}
+    assert "total_funding" not in side_kinds
     assert "application_funding" in side_kinds or any(
-        side["field_name"] in {"申请经费", "申请总额", "项目总经费"} for side in compare["sides"]
+        side["field_name"] in {"申请经费", "申请总额"} for side in compare["sides"]
     )
 
 
@@ -363,3 +373,79 @@ def test_scan_variants_in_review_keep_locatable_highlights(client):
     assert side["field_name"] == "签署日期"
     assert side["bbox"] is not None
     assert side["raw_value"]
+
+
+def test_period_pass_does_not_treat_start_and_end_as_difference():
+    start = ReviewEvidence(
+        field_name="开始日期",
+        raw_value="2027-01-01",
+        normalized_value="2027-01-01",
+        page_number=1,
+        material_id="app",
+    )
+    end = ReviewEvidence(
+        field_name="结束日期",
+        raw_value="2028-12-31",
+        normalized_value="2028-12-31",
+        page_number=1,
+        material_id="app",
+    )
+    result = RuleExecutionResult(
+        status=ReviewCheckStatus.PASS,
+        summary="执行期落在窗口内",
+        evidence=[start, end],
+        data={
+            "rule_id": "RULE-004",
+            "start_date": "2027-01-01",
+            "end_date": "2028-12-31",
+            "violations": [],
+        },
+    )
+    view = build_compare_view(result)
+    assert view.difference is None
+    assert {side.field_name for side in view.sides} == {"开始日期", "结束日期"}
+    assert view.funding_fields == []
+
+
+def test_budget_sum_compare_keeps_openable_line_items(client):
+    project_id = _pack(
+        client,
+        "B11-合计差额",
+        "A1_项目申报书.pdf",
+        "A2_经费预算表_合计差额2元.pdf",
+        "A3_科研诚信与合规承诺书.pdf",
+    )
+    body = _start(client, project_id)
+    item = _item(body, "RULE-006")
+    assert item["check_status"] == "FAIL"
+    compare = item["compare"]
+    names = {side["field_name"] for side in compare["sides"]}
+    assert "申请总额" in names
+    assert "科目合计" in names
+    openable = [side for side in compare["sides"] if side["openable"]]
+    assert openable
+    assert any(side["field_name"] == "申请总额" and side["openable"] for side in compare["sides"])
+    assert any(side["field_name"] == "科目合计" and side["openable"] for side in compare["sides"])
+    assert any(
+        side["field_name"] not in {"申请总额", "科目合计"} and side["openable"] and side["bbox"]
+        for side in compare["sides"]
+    )
+    assert compare["difference_yuan"] == 2 or "2 元" in (compare["difference"] or "")
+
+
+def test_pkg_a_period_pass_has_no_false_difference(client):
+    project_id = _pack(
+        client,
+        "B11-PKG-A-周期",
+        "A1_项目申报书.pdf",
+        "A2_经费预算表.pdf",
+        "A3_科研诚信与合规承诺书.pdf",
+    )
+    body = _start(client, project_id)
+    period = _item(body, "RULE-004")
+    assert period["check_status"] == "PASS"
+    assert period["compare"]["difference"] is None
+    principal = _item(body, "RULE-003")
+    assert principal["check_status"] == "PASS"
+    assert len(principal["compare"]["sides"]) >= 3
+    assert all(side["openable"] for side in principal["compare"]["sides"])

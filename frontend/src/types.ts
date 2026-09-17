@@ -6,6 +6,13 @@ export type Project = {
 
 export type MaterialCategory = 'APPLICATION' | 'BUDGET' | 'COMMITMENT' | 'OTHER'
 
+export const MATERIAL_CATEGORY_LABEL: Record<MaterialCategory, string> = {
+  APPLICATION: '申报书',
+  BUDGET: '预算表',
+  COMMITMENT: '承诺书',
+  OTHER: '其他',
+}
+
 export type MaterialStatus = 'PROCESSING' | 'READY' | 'FAILED'
 
 export type Material = {
