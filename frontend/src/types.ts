@@ -6,6 +6,13 @@ export type Project = {
 
 export type MaterialCategory = 'APPLICATION' | 'BUDGET' | 'COMMITMENT' | 'OTHER'
 
+export const MATERIAL_CATEGORY_LABEL: Record<MaterialCategory, string> = {
+  APPLICATION: '申报书',
+  BUDGET: '预算表',
+  COMMITMENT: '承诺书',
+  OTHER: '其他',
+}
+
 export type MaterialStatus = 'PROCESSING' | 'READY' | 'FAILED'
 
 export type Material = {
@@ -231,6 +238,42 @@ export type RuleExecutionResult = {
   data: Record<string, unknown>
 }
 
+export type CompareSide = {
+  material_id: string | null
+  category: string | null
+  original_filename: string | null
+  field_name: string
+  field_kind: string | null
+  raw_value: string | null
+  unit: string | null
+  normalized_value: string | number | boolean | null
+  page_number: number | null
+  quote: string | null
+  bbox: EvidenceBBox | null
+  reliable: boolean | null
+  reason: string | null
+  openable: boolean
+}
+
+export type LabeledFundingField = {
+  field_name: string
+  field_kind: string
+  raw_value: string | null
+  unit: string | null
+  page_number: number | null
+  bbox: EvidenceBBox | null
+  material_id: string | null
+  original_filename: string | null
+}
+
+export type EvidenceCompareView = {
+  check_field: string
+  difference: string | null
+  difference_yuan: number | null
+  sides: CompareSide[]
+  funding_fields: LabeledFundingField[]
+}
+
 export type ReviewItem = {
   id: string
   rule_code: string
@@ -245,6 +288,7 @@ export type ReviewItem = {
   funding_review_id: string | null
   sort_order: number
   result?: RuleExecutionResult | null
+  compare?: EvidenceCompareView | null
 }
 
 export type ReviewTask = {

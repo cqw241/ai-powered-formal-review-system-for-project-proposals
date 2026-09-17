@@ -114,6 +114,18 @@ def classify_label(label: str) -> FieldKind:
     return "unknown"
 
 
+def iter_inline_labeled_amounts(text: str) -> list[tuple[str, str, str, FieldKind]]:
+    """List inline labeled amounts without choosing a RULE-007 compare target."""
+    items: list[tuple[str, str, str, FieldKind]] = []
+    for match in _LABEL_AMOUNT_INLINE.finditer(text):
+        label = match.group("label")
+        kind = classify_label(label)
+        if kind == "unknown":
+            continue
+        items.append((label, match.group("amount"), match.group("unit") or "", kind))
+    return items
+
+
 def extract_application_funding_from_pdf(
     path: Path,
     *,

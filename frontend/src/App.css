@@ -8,7 +8,7 @@
 
 .app-header,
 .app-main {
-  width: min(1100px, calc(100% - 2rem));
+  width: min(1240px, calc(100% - 2rem));
   margin: 0 auto;
 }
 
@@ -373,23 +373,33 @@ button:disabled {
   background: #edf1f7;
   overflow: auto;
   max-height: min(70vh, 820px);
-  display: flex;
-  justify-content: center;
   padding: 0.75rem;
+}
+
+.preview-panel.compact .preview-image-wrap {
+  max-height: min(48vh, 520px);
 }
 
 .preview-image-frame {
   position: relative;
-  display: inline-block;
-  max-width: 100%;
+  display: block;
+  max-width: none;
   line-height: 0;
 }
 
 .preview-image {
-  max-width: 100%;
+  width: 100%;
   height: auto;
+  display: block;
   background: #fff;
   box-shadow: 0 8px 24px rgba(28, 48, 84, 0.12);
+}
+
+.preview-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
 }
 
 .evidence-highlight {
@@ -669,6 +679,93 @@ button:disabled {
 .evidence-link:hover:not(:disabled) {
   background: transparent;
   color: #183fb0;
+}
+
+.review-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.compare-panel {
+  margin-top: 0.65rem;
+  padding: 0.9rem 0.95rem 1rem;
+  border: 1px solid #d9e1ec;
+  border-radius: 14px;
+  background: #fbfcfe;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.compare-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.compare-head h4 {
+  margin: 0.2rem 0 0;
+  font-size: 1.05rem;
+}
+
+.compare-sides {
+  margin-top: 0;
+}
+
+.compare-pages {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+}
+
+.compare-pages.count-1 {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 860px) {
+  .compare-pages {
+    grid-template-columns: 1fr;
+  }
+}
+
+.funding-kind {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.funding-kind.application {
+  background: #e7f0ff;
+  color: #1f4fd6;
+}
+
+.funding-kind.total {
+  background: #fff1e6;
+  color: #b54708;
+}
+
+.funding-field-list ul {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.funding-field-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.7rem;
+  align-items: center;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #e5ecf5;
+  border-radius: 10px;
+  background: #fff;
 }
 
 .status-review-pass {
